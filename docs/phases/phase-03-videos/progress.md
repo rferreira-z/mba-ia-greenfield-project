@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 5/13 completed
+**SIs:** 6/13 completed
 
 ### SI-03.1 — Infrastructure: object storage, queue broker and FFmpeg in the dev image
 - **Status:** completed
@@ -39,9 +39,12 @@
   - Producer tests use a random BullMQ `prefix` and `queue.obliterate()` so the Compose `video-worker` never consumes them.
 
 ### SI-03.6 — Create video upload (draft pre-registration)
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 20/20 passing (slug.util.spec.ts 3, videos.service.spec.ts 6, videos.service.integration-spec.ts 3, videos.module.spec.ts 1, test/videos.e2e-spec.ts 7); full suite 181/181, e2e 59/59
+- **Observations:**
+  - **Test infra:** `npm run test:e2e` lacked `--runInBand` although `nestjs-project/CLAUDE.md` documents it as already configured; with a second DB-truncating e2e suite the suites ran in parallel and corrupted each other (500s, 409s). Added the flag to the script so behaviour matches the documented contract.
+  - Shared helpers added: `test/utils/e2e-app.ts` (boots AppModule with main.ts globals, clears throttler storage, register→confirm→login) and `src/test/video-test-module.ts` (Postgres + MinIO + Redis wiring with a random BullMQ prefix).
+  - Compensation path proven against real MinIO: a failed draft insert aborts the multipart upload (subsequent `ListParts` fails) and leaves no row.
 
 ### SI-03.7 — Presigned part URLs, upload completion and status read
 - **Status:** pending
