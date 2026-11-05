@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 1/13 completed
+**SIs:** 2/13 completed
 
 ### SI-03.1 — Infrastructure: object storage, queue broker and FFmpeg in the dev image
 - **Status:** completed
@@ -12,9 +12,10 @@
   - Host ports for the new services are overridable (`REDIS_HOST_PORT`, `MINIO_API_HOST_PORT`, `MINIO_CONSOLE_HOST_PORT`) — this machine maps Redis to 6380 via the git-ignored `.env`.
 
 ### SI-03.2 — Dependencies and configuration namespaces (storage, queue)
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 13/13 passing (env.validation.integration-spec.ts, incl. 6 new phase-03 cases)
+- **Observations:**
+  - `npm install` resolved `bullmq@6.3.19` (inside the pinned `~6.3.17` range; published 2026-10-20, older than the two-week rule) and `ioredis@5.11.1`, deduped with the copies already pulled transitively by `@nestjs-modules/mailer` and `typeorm`.
 
 ### SI-03.3 — StorageModule: S3 clients and StorageService
 - **Status:** pending
