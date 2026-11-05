@@ -4,6 +4,7 @@ import type { ConfigType } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, QueryFailedError, Repository } from 'typeorm';
 import { ChannelsService } from '../channels/channels.service';
+import appConfig from '../config/app.config';
 import storageConfig from '../config/storage.config';
 import { MultipartUploadNotFoundError } from '../storage/storage.errors';
 import { StorageService, type UploadedPart } from '../storage/storage.service';
@@ -13,6 +14,7 @@ import { CreateVideoResponseDto } from './dto/create-video-response.dto';
 import { UploadPartUrlsResponseDto } from './dto/upload-part-urls-response.dto';
 import { VideoResponseDto } from './dto/video-response.dto';
 import { Video, VideoStatus } from './entities/video.entity';
+import { attachmentDisposition } from './content-disposition.util';
 import { generateVideoSlug } from './slug.util';
 import {
   MAX_PART_URLS_PER_REQUEST,
@@ -25,6 +27,7 @@ import {
   UploadIncompleteException,
   VideoAccessDeniedException,
   VideoNotFoundException,
+  VideoNotReadyException,
   VideoUploadNotInProgressException,
 } from './videos.exceptions';
 
@@ -67,6 +70,8 @@ export class VideosService {
     private readonly storageCfg: ConfigType<typeof storageConfig>,
     private readonly dataSource: DataSource,
     private readonly videoProcessingProducer: VideoProcessingProducer,
+    @Inject(appConfig.KEY)
+    private readonly appCfg: ConfigType<typeof appConfig>,
   ) {}
 
   /**
@@ -188,6 +193,42 @@ export class VideosService {
     );
   }
 
+  /**
+   * Presigned GET for progressive playback — storage answers Range requests
+   * with 206 (phase-03-videos/TD-08). Public for `ready` videos (TD-09).
+   */
+  async getStreamUrl(slug: string): Promise<string> {
+    const video = await this.findReadyBySlug(slug);
+    return this.storageService.presignGetObject(video.source_key);
+  }
+
+  /** Presigned GET that makes the browser save the file under its name. */
+  async getDownloadUrl(slug: string): Promise<string> {
+    const video = await this.findReadyBySlug(slug);
+    return this.storageService.presignGetObject(video.source_key, {
+      contentDisposition: attachmentDisposition(video.original_filename),
+    });
+  }
+
+  async getThumbnailUrl(slug: string): Promise<string> {
+    const video = await this.findReadyBySlug(slug);
+    if (!video.thumbnail_key) {
+      throw new VideoNotReadyException();
+    }
+    return this.storageService.presignGetObject(video.thumbnail_key);
+  }
+
+  private async findReadyBySlug(slug: string): Promise<Video> {
+    const video = await this.videoRepository.findOneBy({ slug });
+    if (!video) {
+      throw new VideoNotFoundException();
+    }
+    if (video.status !== VideoStatus.READY) {
+      throw new VideoNotReadyException();
+    }
+    return video;
+  }
+
   private async findOwnedBySlug(slug: string, userId: string): Promise<Video> {
     const video = await this.videoRepository.findOne({
       where: { slug },
@@ -303,6 +344,7 @@ export class VideosService {
   }
 
   private toResponse(video: Video): VideoResponseDto {
+    const videoUrl = `${this.appCfg.url.replace(/\/$/, '')}/videos/${video.slug}`;
     return {
       id: video.id,
       slug: video.slug,
@@ -314,6 +356,9 @@ export class VideosService {
       duration_seconds: video.duration_seconds ?? null,
       metadata: video.metadata ?? null,
       failure_reason: video.failure_reason ?? null,
+      stream_url: `${videoUrl}/stream`,
+      download_url: `${videoUrl}/download`,
+      thumbnail_url: video.thumbnail_key ? `${videoUrl}/thumbnail` : null,
       processed_at: video.processed_at ?? null,
       created_at: video.created_at,
       updated_at: video.updated_at,

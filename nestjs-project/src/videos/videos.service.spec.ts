@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource, QueryFailedError } from 'typeorm';
 import { ChannelsService } from '../channels/channels.service';
+import appConfig from '../config/app.config';
 import storageConfig from '../config/storage.config';
 import { MultipartUploadNotFoundError } from '../storage/storage.errors';
 import { StorageService } from '../storage/storage.service';
@@ -16,6 +17,7 @@ import {
   UploadIncompleteException,
   VideoAccessDeniedException,
   VideoNotFoundException,
+  VideoNotReadyException,
   VideoUploadNotInProgressException,
 } from './videos.exceptions';
 import { VideosService } from './videos.service';
@@ -69,6 +71,7 @@ describe('VideosService', () => {
     create: jest.fn((data: Partial<Video>) => ({ ...data })),
     save: jest.fn(),
     findOne: jest.fn(),
+    findOneBy: jest.fn(),
     findOneByOrFail: jest.fn(),
   };
   const updateQuery = {
@@ -92,6 +95,7 @@ describe('VideosService', () => {
     listUploadedParts: jest.fn(),
     completeMultipartUpload: jest.fn(),
     headObject: jest.fn(),
+    presignGetObject: jest.fn(),
     presignedUrlExpiresSeconds: 3600,
   };
   const dto: CreateVideoDto = {
@@ -141,6 +145,10 @@ describe('VideosService', () => {
         },
         { provide: DataSource, useValue: dataSource },
         { provide: VideoProcessingProducer, useValue: producer },
+        {
+          provide: appConfig.KEY,
+          useValue: { url: 'http://api.test/' },
+        },
       ],
     }).compile();
     service = module.get(VideosService);
@@ -375,6 +383,101 @@ describe('VideosService', () => {
       await expect(
         service.completeUpload('abcdefghijk', 'user-1'),
       ).rejects.toThrow(VideoUploadNotInProgressException);
+    });
+  });
+
+  describe('public delivery URLs', () => {
+    const ready = () =>
+      draft({
+        status: VideoStatus.READY,
+        upload_id: null,
+        original_filename: 'Férias "2026".mp4',
+        thumbnail_key: 'videos/video-1/thumbnail.jpg',
+      });
+
+    beforeEach(() => {
+      storageService.presignGetObject.mockResolvedValue(
+        'http://localhost:9000/signed',
+      );
+    });
+
+    it('should presign the source object for streaming', async () => {
+      videoRepository.findOneBy.mockResolvedValue(ready());
+
+      const url = await service.getStreamUrl('abcdefghijk');
+
+      expect(url).toBe('http://localhost:9000/signed');
+      expect(storageService.presignGetObject).toHaveBeenCalledWith(
+        'videos/video-1/source',
+      );
+    });
+
+    it('should sign downloads with an RFC 6266 attachment disposition', async () => {
+      videoRepository.findOneBy.mockResolvedValue(ready());
+
+      await service.getDownloadUrl('abcdefghijk');
+
+      expect(storageService.presignGetObject).toHaveBeenCalledWith(
+        'videos/video-1/source',
+        {
+          contentDisposition:
+            'attachment; filename="F_rias _2026_.mp4"; ' +
+            "filename*=UTF-8''F%C3%A9rias%20%222026%22.mp4",
+        },
+      );
+    });
+
+    it('should presign the thumbnail object', async () => {
+      videoRepository.findOneBy.mockResolvedValue(ready());
+
+      await service.getThumbnailUrl('abcdefghijk');
+
+      expect(storageService.presignGetObject).toHaveBeenCalledWith(
+        'videos/video-1/thumbnail.jpg',
+      );
+    });
+
+    it('should return 404 semantics for an unknown slug', async () => {
+      videoRepository.findOneBy.mockResolvedValue(null);
+
+      await expect(service.getStreamUrl('missing')).rejects.toThrow(
+        VideoNotFoundException,
+      );
+    });
+
+    it.each([VideoStatus.DRAFT, VideoStatus.PROCESSING, VideoStatus.FAILED])(
+      'should refuse delivery while the video is %s',
+      async (status) => {
+        videoRepository.findOneBy.mockResolvedValue(draft({ status }));
+
+        await expect(service.getDownloadUrl('abcdefghijk')).rejects.toThrow(
+          VideoNotReadyException,
+        );
+      },
+    );
+
+    it('should expose the unique URLs built from APP_URL and the slug', async () => {
+      videoRepository.findOne.mockResolvedValue(ready());
+
+      const video = await service.getOwnedVideo('abcdefghijk', 'user-1');
+
+      expect(video.stream_url).toBe(
+        'http://api.test/videos/abcdefghijk/stream',
+      );
+      expect(video.download_url).toBe(
+        'http://api.test/videos/abcdefghijk/download',
+      );
+      expect(video.thumbnail_url).toBe(
+        'http://api.test/videos/abcdefghijk/thumbnail',
+      );
+    });
+
+    it('should report no thumbnail URL before processing', async () => {
+      videoRepository.findOne.mockResolvedValue(draft());
+
+      const video = await service.getOwnedVideo('abcdefghijk', 'user-1');
+
+      expect(video.thumbnail_url).toBeNull();
     });
   });
 });

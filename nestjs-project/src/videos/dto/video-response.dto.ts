@@ -58,6 +58,25 @@ export class VideoResponseDto {
   @ApiProperty({ nullable: true, example: null })
   failure_reason: string | null;
 
+  @ApiProperty({
+    example: 'http://localhost:3000/videos/aZ3kQ9xLm2P/stream',
+    description: 'Unique streaming URL (redirects to storage; 409 until ready)',
+  })
+  stream_url: string;
+
+  @ApiProperty({
+    example: 'http://localhost:3000/videos/aZ3kQ9xLm2P/download',
+    description: 'Unique download URL (redirects to storage; 409 until ready)',
+  })
+  download_url: string;
+
+  @ApiProperty({
+    nullable: true,
+    example: 'http://localhost:3000/videos/aZ3kQ9xLm2P/thumbnail',
+    description: 'Thumbnail URL once processing generated it, otherwise null',
+  })
+  thumbnail_url: string | null;
+
   @ApiProperty({ nullable: true, format: 'date-time' })
   processed_at: Date | null;
 

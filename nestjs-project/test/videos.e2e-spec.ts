@@ -1,8 +1,9 @@
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { DataSource } from 'typeorm';
+import { Channel } from '../src/channels/entities/channel.entity';
 import { StorageService } from '../src/storage/storage.service';
 import { cleanAllTables } from '../src/test/create-test-data-source';
 import { requestPresigned } from '../src/test/presigned-http';
@@ -284,6 +285,122 @@ describe('Videos (e2e)', () => {
       await request(app.getHttpServer())
         .post(`/videos/${slug}/upload/complete`)
         .expect(401);
+    });
+  });
+
+  describe('public delivery (stream, download, thumbnail)', () => {
+    const content = randomBytes(8192);
+    const thumbnail = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 4]);
+
+    /** A processed video, as the worker would leave it (no job involved). */
+    async function seedReadyVideo(): Promise<Video> {
+      const channel = await dataSource
+        .getRepository(Channel)
+        .findOneByOrFail({ nickname: `videos_e2e_${userCounter}` });
+      const id = randomUUID();
+      const video = await dataSource.getRepository(Video).save({
+        id,
+        slug: `rdy${String(userCounter).padStart(8, '0')}`,
+        channel_id: channel.id,
+        title: 'Ready video',
+        status: VideoStatus.READY,
+        original_filename: 'Férias.mp4',
+        mime_type: 'video/mp4',
+        size_bytes: content.length,
+        part_size_bytes: 67108864,
+        source_key: `videos/${id}/source`,
+        upload_id: null,
+        thumbnail_key: `videos/${id}/thumbnail.jpg`,
+        duration_seconds: 2,
+      });
+      await storage.putObject(video.source_key, content, 'video/mp4');
+      await storage.putObject(video.thumbnail_key, thumbnail, 'image/jpeg');
+      return video;
+    }
+
+    it('should redirect anonymous streaming to storage, which serves ranges with 206', async () => {
+      const video = await seedReadyVideo();
+
+      const res = await request(app.getHttpServer())
+        .get(`/videos/${video.slug}/stream`)
+        .expect(302);
+      const location = res.headers.location;
+      const ranged = await requestPresigned(location, {
+        headers: { range: 'bytes=0-1023' },
+      });
+
+      expect(location.startsWith(process.env.S3_PUBLIC_ENDPOINT!)).toBe(true);
+      expect(ranged.status).toBe(206);
+      expect(ranged.body.equals(content.subarray(0, 1024))).toBe(true);
+      expect(ranged.headers['content-type']).toBe('video/mp4');
+    });
+
+    it('should redirect downloads to a URL served as an attachment', async () => {
+      const video = await seedReadyVideo();
+
+      const res = await request(app.getHttpServer())
+        .get(`/videos/${video.slug}/download`)
+        .expect(302);
+      const file = await requestPresigned(res.headers.location);
+
+      expect(file.status).toBe(200);
+      expect(file.headers['content-disposition']).toContain('attachment;');
+      expect(file.headers['content-disposition']).toContain(
+        "filename*=UTF-8''F%C3%A9rias.mp4",
+      );
+      expect(file.body.equals(content)).toBe(true);
+    });
+
+    it('should redirect to the generated thumbnail', async () => {
+      const video = await seedReadyVideo();
+
+      const res = await request(app.getHttpServer())
+        .get(`/videos/${video.slug}/thumbnail`)
+        .expect(302);
+      const image = await requestPresigned(res.headers.location);
+
+      expect(image.status).toBe(200);
+      expect(image.headers['content-type']).toBe('image/jpeg');
+    });
+
+    it('should expose the unique stream and download URLs to the owner', async () => {
+      const video = await seedReadyVideo();
+
+      const res = await request(app.getHttpServer())
+        .get(`/videos/${video.slug}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(res.body.stream_url).toMatch(
+        new RegExp(`/videos/${video.slug}/stream$`),
+      );
+      expect(res.body.download_url).toMatch(
+        new RegExp(`/videos/${video.slug}/download$`),
+      );
+      expect(res.body.thumbnail_url).toMatch(
+        new RegExp(`/videos/${video.slug}/thumbnail$`),
+      );
+    });
+
+    it('should return 409 VIDEO_NOT_READY for a draft', async () => {
+      const draftRes = await createVideo().expect(201);
+
+      const res = await request(app.getHttpServer())
+        .get(`/videos/${draftRes.body.video.slug}/stream`)
+        .expect(409);
+      await request(app.getHttpServer())
+        .get(`/videos/${draftRes.body.video.slug}/download`)
+        .expect(409);
+
+      expect(res.body.error).toBe('VIDEO_NOT_READY');
+    });
+
+    it('should return 404 VIDEO_NOT_FOUND for an unknown slug', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/videos/unknownSlug/stream')
+        .expect(404);
+
+      expect(res.body.error).toBe('VIDEO_NOT_FOUND');
     });
   });
 });
