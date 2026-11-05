@@ -331,6 +331,64 @@ _Stack constraints inherited (not reopened):_ NestJS 11 + TypeORM 0.3 + PostgreS
 
 ---
 
+## TD-12: Canonical Environment Configuration for Storage, Queue and Upload
+
+**Scope:** Repo-wide
+
+**Capability:** Transversal — covers: Serviço de armazenamento de arquivos (vídeos e thumbnails); Serviço de processamento em segundo plano (filas); Upload de vídeos com suporte a arquivos de até 10GB sem impacto na performance
+
+**Context:** Added after `/plan-validate` MD-1. The new services are wired through `compose.yaml`, validated by the Joi schema (`src/config/env.validation.ts`, phase-01/TD-02), documented in `.env.example` and read by two processes (API and worker). The key set is a cross-component contract; inherited convention: one `registerAs` namespace per domain (phase-01/TD-03).
+
+**Options:**
+
+### Option A: Explicit prefixed keys per concern, Joi-validated with Compose-name defaults
+- `S3_ENDPOINT`, `S3_PUBLIC_ENDPOINT`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_BUCKET`, `S3_FORCE_PATH_STYLE`, `PRESIGNED_URL_EXPIRES_SECONDS`, `UPLOAD_PART_SIZE_MB` → `storage` namespace; `REDIS_HOST`, `REDIS_PORT`, `QUEUE_PREFIX` → `queue` namespace. MinIO's own `MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD` stay in `compose.yaml` only.
+- **Pros:** Mirrors the existing `DB_*`/`MAIL_*` style; each value individually validated and defaulted; defaults use Compose service names (`minio`, `redis`) per the Docker networking rule.
+- **Cons:** More keys to document.
+
+### Option B: Connection URLs (`S3_URL=http://key:secret@minio:9000/bucket`, `REDIS_URL=redis://redis:6379`)
+- **Pros:** Two variables cover everything.
+- **Cons:** Credentials embedded in URLs (escaping, leakage in logs); public endpoint and tuning knobs still need extra keys; diverges from the `DB_*` style.
+
+### Option C: AWS SDK standard variables (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `AWS_ENDPOINT_URL_S3`)
+- **Pros:** Zero-config on AWS with the default credential chain.
+- **Cons:** Implicit — the SDK reads them outside `@nestjs/config`, bypassing Joi validation and typed `ConfigType` injection; no slot for the public signing endpoint.
+
+**Recommendation:** **Option A** — Consistent with the inherited per-domain `registerAs` + Joi convention and keeps every value explicit and validated in both processes.
+
+**Decision:** _[pending]_
+
+---
+
+## TD-13: Accepted Upload Media Types
+
+**Scope:** Cross-layer
+
+**Capability:** Upload de vídeos com suporte a arquivos de até 10GB sem impacto na performance
+
+**Context:** Added after `/plan-validate` MD-2. The client declares the file's MIME type when starting the upload (TD-02). The declared type is untrusted, but it is also stored as the object's `Content-Type`, which browsers use when playing the progressive stream (TD-08). No transcoding exists in this phase, so what is uploaded is what is streamed.
+
+**Options:**
+
+### Option A: Allowlist at draft creation (`video/mp4`, `video/webm`, `video/quicktime`) + ffprobe as final authority
+- DTO rejects other types with 400; the worker still fails the video (`failed`) when ffprobe finds no video stream.
+- **Pros:** Fast feedback before 10GB are sent; restricts to containers browsers commonly play progressively (MP4/WebM; MOV from phones); correct `Content-Type` on the stored object.
+- **Cons:** Rejects legitimately valid but less common containers (MKV, AVI) until transcoding exists.
+
+### Option B: Any `video/*` declared type + ffprobe as final authority
+- **Pros:** Permissive; fewer client rejections.
+- **Cons:** Accepts formats the platform cannot stream in browsers (no transcoding) — uploads succeed but playback fails.
+
+### Option C: No API-side check; worker decides
+- **Pros:** Simplest API.
+- **Cons:** Users learn about an unsupported file only after uploading up to 10GB; object `Content-Type` may be meaningless.
+
+**Recommendation:** **Option A** — With no transcoding in Phase 03, the allowlist keeps uploads aligned with what the streaming capability can actually play, and ffprobe still guards against mislabeled files.
+
+**Decision:** _[pending]_
+
+---
+
 ## Decisions Summary
 
 | ID | Scope | Decision | Recommendation | Choice |
@@ -346,3 +404,5 @@ _Stack constraints inherited (not reopened):_ NestJS 11 + TypeORM 0.3 + PostgreS
 | TD-09 | Cross-layer | Access Policy for Video Consumption Endpoints | Public for ready videos; owner-only management | _[pending]_ |
 | TD-10 | Backend | Video Status Lifecycle and Failure Handling | draft → processing → ready/failed + queue retries | _[pending]_ |
 | TD-11 | Backend | Test Strategy for Storage, Queue and Worker | Real Compose infrastructure | _[pending]_ |
+| TD-12 | Repo-wide | Canonical Environment Configuration for Storage, Queue and Upload | Explicit prefixed keys, Joi-validated | _[pending]_ |
+| TD-13 | Cross-layer | Accepted Upload Media Types | Allowlist mp4/webm/quicktime + ffprobe | _[pending]_ |
