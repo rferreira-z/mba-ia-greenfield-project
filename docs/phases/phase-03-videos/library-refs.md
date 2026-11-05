@@ -3,23 +3,23 @@ libs:
   "@nestjs/bullmq":
     version: "^12.0.0"
     context7_id: "/nestjs/bull"
-    fetched_at: "2026-11-05T20:40:00-03:00"
+    fetched_at: "2026-11-05T20:25:21-03:00"
   bullmq:
     version: "~6.3.17"
     context7_id: "/taskforcesh/bullmq/v6.3.11"
-    fetched_at: "2026-11-05T20:40:00-03:00"
+    fetched_at: "2026-11-05T20:25:21-03:00"
   ioredis:
     version: "~5.11.1"
     context7_id: "/taskforcesh/bullmq/v6.3.11"
-    fetched_at: "2026-11-05T20:40:00-03:00"
+    fetched_at: "2026-11-05T20:25:21-03:00"
   "@aws-sdk/client-s3":
     version: "~3.1153.0"
     context7_id: "/websites/aws_amazon_awsjavascriptsdk_v3"
-    fetched_at: "2026-11-05T20:42:00-03:00"
+    fetched_at: "2026-11-05T20:25:21-03:00"
   "@aws-sdk/s3-request-presigner":
     version: "~3.1153.0"
     context7_id: "/websites/aws_amazon_sdk-for-javascript_v3_developer-guide"
-    fetched_at: "2026-11-05T20:42:00-03:00"
+    fetched_at: "2026-11-05T20:25:21-03:00"
 sources_mtime:
   docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-05T20:25:43-03:00"
 ---
