@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 11/13 completed
+**SIs:** 12/13 completed
 
 ### SI-03.1 — Infrastructure: object storage, queue broker and FFmpeg in the dev image
 - **Status:** completed
@@ -84,9 +84,11 @@
   - Download disposition follows RFC 6266: quoted ASCII fallback plus `filename*=UTF-8''…` — verified end-to-end with a non-ASCII name (`Férias.mp4`).
 
 ### SI-03.12 — End-to-end pipeline: upload → queue → worker → streaming
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** test/video-pipeline.e2e-spec.ts 3/3 against the running Compose stack (ready path ~0.7s, failed path, 10 GiB contract); full suite 230/230, e2e 78/78
+- **Observations:**
+  - Verified the deliverables end-to-end with the real `video-worker` container: a generated 2 s H.264/AAC MP4 is uploaded straight to MinIO through presigned part URLs, processed (duration ≈ 2 s, 320×240, h264/aac, JPEG thumbnail), streamed with HTTP 206 and downloaded byte-identical with `Content-Disposition: attachment`.
+  - Added a warning log when the worker rejects invalid media, so the failed path is visible in `docker compose logs video-worker`.
 
 ### SI-03.13 — OpenAPI contract and AI documentation
 - **Status:** pending

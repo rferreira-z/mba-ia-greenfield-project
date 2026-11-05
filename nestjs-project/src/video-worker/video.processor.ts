@@ -32,6 +32,7 @@ export class VideoProcessor extends WorkerHost {
       this.logger.log(`Video ${videoId} ${outcome}`);
     } catch (err) {
       if (err instanceof InvalidMediaError) {
+        this.logger.warn(`Video ${videoId} rejected: ${err.message}`);
         await this.videoProcessingService.markFailed(videoId, err.message);
         throw new UnrecoverableError(err.message);
       }
