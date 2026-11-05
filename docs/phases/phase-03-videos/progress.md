@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 6/13 completed
+**SIs:** 7/13 completed
 
 ### SI-03.1 — Infrastructure: object storage, queue broker and FFmpeg in the dev image
 - **Status:** completed
@@ -47,9 +47,12 @@
   - Compensation path proven against real MinIO: a failed draft insert aborts the multipart upload (subsequent `ListParts` fails) and leaves no row.
 
 ### SI-03.7 — Presigned part URLs, upload completion and status read
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** videos.service.spec.ts 19/19, videos.service.integration-spec.ts 6/6, test/videos.e2e-spec.ts 17/17; full suite 197/197, e2e 69/69
+- **Observations:**
+  - Ownership is resolved through the `video.channel` relation (`channel.user_id === caller`), so no extra channel query per request.
+  - Rollback + recovery proven against the real stack: when enqueueing throws inside the transaction the row stays `draft` with its `upload_id`; the retry finds the multipart upload already completed (`NoSuchUpload`), accepts it because `HeadObject` size equals `size_bytes`, and enqueues.
+  - E2E completions enqueue real `process-video` jobs on the default prefix; until the worker container exists (SI-03.10) they wait in Redis — the worker must treat a missing row as a no-op (rows are deleted by test cleanup).
 
 ### SI-03.8 — Media probe service (ffprobe/ffmpeg)
 - **Status:** pending

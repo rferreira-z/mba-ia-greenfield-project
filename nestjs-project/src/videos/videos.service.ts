@@ -2,12 +2,15 @@ import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { QueryFailedError, Repository } from 'typeorm';
+import { DataSource, QueryFailedError, Repository } from 'typeorm';
 import { ChannelsService } from '../channels/channels.service';
 import storageConfig from '../config/storage.config';
-import { StorageService } from '../storage/storage.service';
+import { MultipartUploadNotFoundError } from '../storage/storage.errors';
+import { StorageService, type UploadedPart } from '../storage/storage.service';
+import { VideoProcessingProducer } from '../video-processing/video-processing.producer';
 import { CreateVideoDto } from './dto/create-video.dto';
 import { CreateVideoResponseDto } from './dto/create-video-response.dto';
+import { UploadPartUrlsResponseDto } from './dto/upload-part-urls-response.dto';
 import { VideoResponseDto } from './dto/video-response.dto';
 import { Video, VideoStatus } from './entities/video.entity';
 import { generateVideoSlug } from './slug.util';
@@ -16,7 +19,14 @@ import {
   MAX_SLUG_ATTEMPTS,
   videoStorageKeys,
 } from './videos.constants';
-import { ChannelNotFoundException } from './videos.exceptions';
+import {
+  ChannelNotFoundException,
+  InvalidPartNumberException,
+  UploadIncompleteException,
+  VideoAccessDeniedException,
+  VideoNotFoundException,
+  VideoUploadNotInProgressException,
+} from './videos.exceptions';
 
 const PG_UNIQUE_VIOLATION = '23505';
 
@@ -55,6 +65,8 @@ export class VideosService {
     private readonly storageService: StorageService,
     @Inject(storageConfig.KEY)
     private readonly storageCfg: ConfigType<typeof storageConfig>,
+    private readonly dataSource: DataSource,
+    private readonly videoProcessingProducer: VideoProcessingProducer,
   ) {}
 
   /**
@@ -104,6 +116,157 @@ export class VideosService {
         max_part_urls_per_request: MAX_PART_URLS_PER_REQUEST,
       },
     };
+  }
+
+  /** Owner-only status read (any status). */
+  async getOwnedVideo(slug: string, userId: string): Promise<VideoResponseDto> {
+    return this.toResponse(await this.findOwnedBySlug(slug, userId));
+  }
+
+  /** Presigned PUT URLs for the requested parts of a draft's upload. */
+  async presignUploadParts(
+    slug: string,
+    userId: string,
+    partNumbers: number[],
+  ): Promise<UploadPartUrlsResponseDto> {
+    const video = await this.findOwnedBySlug(slug, userId);
+    const uploadId = this.requireDraftUpload(video);
+    const partCount = this.partCountOf(video);
+    if (partNumbers.some((n) => n < 1 || n > partCount)) {
+      throw new InvalidPartNumberException();
+    }
+
+    const expiresAt = new Date(
+      Date.now() + this.storageService.presignedUrlExpiresSeconds * 1000,
+    );
+    const parts = await Promise.all(
+      partNumbers.map(async (partNumber) => ({
+        part_number: partNumber,
+        url: await this.storageService.presignUploadPart(
+          video.source_key,
+          uploadId,
+          partNumber,
+        ),
+      })),
+    );
+    return { parts, expires_at: expiresAt.toISOString() };
+  }
+
+  /**
+   * Finishes the multipart upload after checking the uploaded parts, then —
+   * in one transaction — moves the video to `processing` and enqueues the
+   * processing job (phase-03-videos/TD-02, TD-10). If enqueueing fails the
+   * status change rolls back; a retry recovers through the stored object.
+   */
+  async completeUpload(
+    slug: string,
+    userId: string,
+  ): Promise<VideoResponseDto> {
+    const video = await this.findOwnedBySlug(slug, userId);
+    const uploadId = this.requireDraftUpload(video);
+
+    await this.finalizeStoredUpload(video, uploadId);
+
+    await this.dataSource.transaction(async (manager) => {
+      const result = await manager
+        .createQueryBuilder()
+        .update(Video)
+        .set({ status: VideoStatus.PROCESSING, upload_id: null })
+        .where('id = :id AND status = :status', {
+          id: video.id,
+          status: VideoStatus.DRAFT,
+        })
+        .execute();
+      if (result.affected !== 1) {
+        throw new VideoUploadNotInProgressException();
+      }
+      await this.videoProcessingProducer.enqueue(video.id);
+    });
+
+    return this.toResponse(
+      await this.videoRepository.findOneByOrFail({ id: video.id }),
+    );
+  }
+
+  private async findOwnedBySlug(slug: string, userId: string): Promise<Video> {
+    const video = await this.videoRepository.findOne({
+      where: { slug },
+      relations: { channel: true },
+    });
+    if (!video) {
+      throw new VideoNotFoundException();
+    }
+    if (video.channel.user_id !== userId) {
+      throw new VideoAccessDeniedException();
+    }
+    return video;
+  }
+
+  private requireDraftUpload(video: Video): string {
+    if (video.status !== VideoStatus.DRAFT || !video.upload_id) {
+      throw new VideoUploadNotInProgressException();
+    }
+    return video.upload_id;
+  }
+
+  private partCountOf(video: Video): number {
+    return Math.ceil(video.size_bytes / video.part_size_bytes);
+  }
+
+  private async finalizeStoredUpload(
+    video: Video,
+    uploadId: string,
+  ): Promise<void> {
+    let parts: UploadedPart[];
+    try {
+      parts = await this.storageService.listUploadedParts(
+        video.source_key,
+        uploadId,
+      );
+    } catch (err) {
+      if (err instanceof MultipartUploadNotFoundError) {
+        return this.assertStoredObjectComplete(video);
+      }
+      throw err;
+    }
+
+    if (!this.partsMatchDeclaredFile(video, parts)) {
+      throw new UploadIncompleteException();
+    }
+
+    try {
+      await this.storageService.completeMultipartUpload(
+        video.source_key,
+        uploadId,
+        parts,
+      );
+    } catch (err) {
+      if (err instanceof MultipartUploadNotFoundError) {
+        return this.assertStoredObjectComplete(video);
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Recovery: the multipart upload is gone because a previous completion
+   * succeeded in storage but its DB step failed. Accept it only when the
+   * stored object has exactly the declared size.
+   */
+  private async assertStoredObjectComplete(video: Video): Promise<void> {
+    const size = await this.storageService.headObject(video.source_key);
+    if (size !== video.size_bytes) {
+      throw new UploadIncompleteException();
+    }
+  }
+
+  private partsMatchDeclaredFile(video: Video, parts: UploadedPart[]): boolean {
+    const partCount = this.partCountOf(video);
+    const contiguous =
+      parts.length === partCount &&
+      parts.every((part, index) => part.partNumber === index + 1);
+    const totalSize = parts.reduce((sum, part) => sum + part.size, 0);
+    return contiguous && totalSize === video.size_bytes;
   }
 
   private async insertWithUniqueSlug(data: NewVideo): Promise<Video> {

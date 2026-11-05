@@ -1,4 +1,12 @@
-import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Post,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -10,8 +18,11 @@ import { SkipThrottle } from '@nestjs/throttler';
 import type { JwtPayload } from '../auth/auth.types';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { ApiErrorEnvelope } from '../common/openapi/api-error-envelope.dto';
+import { CreateUploadPartUrlsDto } from './dto/create-upload-part-urls.dto';
 import { CreateVideoDto } from './dto/create-video.dto';
 import { CreateVideoResponseDto } from './dto/create-video-response.dto';
+import { UploadPartUrlsResponseDto } from './dto/upload-part-urls-response.dto';
+import { VideoResponseDto } from './dto/video-response.dto';
 import { VideosService } from './videos.service';
 
 const errorSchema = { $ref: getSchemaPath(ApiErrorEnvelope) };
@@ -56,5 +67,140 @@ export class VideosController {
     @Body() dto: CreateVideoDto,
   ): Promise<CreateVideoResponseDto> {
     return this.videosService.createUpload(user.sub, dto);
+  }
+
+  @Post(':slug/upload/part-urls')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Presign upload part URLs',
+    description:
+      'Returns presigned PUT URLs for the requested part numbers of a draft upload. The client sends each part directly to object storage.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Presigned part URLs',
+    type: UploadPartUrlsResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Validation failed',
+    schema: errorSchema,
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Missing or invalid access token',
+    schema: errorSchema,
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Caller does not own the video',
+    schema: errorSchema,
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Video not found',
+    schema: errorSchema,
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Video upload is not in progress (status is not draft)',
+    schema: errorSchema,
+  })
+  @ApiResponse({
+    status: 422,
+    description: 'Part number outside the upload part range',
+    schema: errorSchema,
+  })
+  async createPartUrls(
+    @CurrentUser() user: JwtPayload,
+    @Param('slug') slug: string,
+    @Body() dto: CreateUploadPartUrlsDto,
+  ): Promise<UploadPartUrlsResponseDto> {
+    return this.videosService.presignUploadParts(
+      slug,
+      user.sub,
+      dto.part_numbers,
+    );
+  }
+
+  @Post(':slug/upload/complete')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Complete a video upload',
+    description:
+      'Verifies the uploaded parts, completes the multipart upload, moves the video to processing and enqueues automatic processing (duration, metadata, thumbnail).',
+  })
+  @ApiResponse({
+    status: 202,
+    description: 'Upload completed; processing queued',
+    type: VideoResponseDto,
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Missing or invalid access token',
+    schema: errorSchema,
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Caller does not own the video',
+    schema: errorSchema,
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Video not found',
+    schema: errorSchema,
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Video upload is not in progress (already completed)',
+    schema: errorSchema,
+  })
+  @ApiResponse({
+    status: 422,
+    description:
+      'Uploaded parts are missing or their total size differs from the declared size',
+    schema: errorSchema,
+  })
+  async complete(
+    @CurrentUser() user: JwtPayload,
+    @Param('slug') slug: string,
+  ): Promise<VideoResponseDto> {
+    return this.videosService.completeUpload(slug, user.sub);
+  }
+
+  @Get(':slug')
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Get one of my videos',
+    description:
+      'Returns a video owned by the caller in any status — used to follow upload and processing progress.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'The video',
+    type: VideoResponseDto,
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Missing or invalid access token',
+    schema: errorSchema,
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Caller does not own the video',
+    schema: errorSchema,
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Video not found',
+    schema: errorSchema,
+  })
+  async findOne(
+    @CurrentUser() user: JwtPayload,
+    @Param('slug') slug: string,
+  ): Promise<VideoResponseDto> {
+    return this.videosService.getOwnedVideo(slug, user.sub);
   }
 }

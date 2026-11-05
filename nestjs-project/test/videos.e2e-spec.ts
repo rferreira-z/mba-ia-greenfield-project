@@ -1,9 +1,11 @@
+import { randomBytes } from 'node:crypto';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { DataSource } from 'typeorm';
 import { StorageService } from '../src/storage/storage.service';
 import { cleanAllTables } from '../src/test/create-test-data-source';
+import { requestPresigned } from '../src/test/presigned-http';
 import { Video, VideoStatus } from '../src/videos/entities/video.entity';
 import {
   clearThrottler,
@@ -139,6 +141,147 @@ describe('Videos (e2e)', () => {
       await request(app.getHttpServer())
         .post('/videos')
         .send(validBody)
+        .expect(401);
+    });
+  });
+
+  describe('upload handshake', () => {
+    const body = randomBytes(4096);
+    const smallVideo = { ...validBody, file_size: body.length };
+
+    async function createDraft(): Promise<string> {
+      const res = await createVideo(smallVideo).expect(201);
+      return res.body.video.slug as string;
+    }
+
+    function partUrls(slug: string, partNumbers: unknown, bearer = token) {
+      return request(app.getHttpServer())
+        .post(`/videos/${slug}/upload/part-urls`)
+        .set('Authorization', `Bearer ${bearer}`)
+        .send({ part_numbers: partNumbers });
+    }
+
+    function complete(slug: string, bearer = token) {
+      return request(app.getHttpServer())
+        .post(`/videos/${slug}/upload/complete`)
+        .set('Authorization', `Bearer ${bearer}`);
+    }
+
+    async function uploadWholeFile(slug: string): Promise<void> {
+      const res = await partUrls(slug, [1]).expect(200);
+      const put = await requestPresigned(res.body.parts[0].url, {
+        method: 'PUT',
+        body,
+      });
+      expect(put.status).toBe(200);
+    }
+
+    it('should return presigned part URLs for the public storage endpoint', async () => {
+      const slug = await createDraft();
+
+      const res = await partUrls(slug, [1]).expect(200);
+
+      expect(res.body.parts).toHaveLength(1);
+      expect(res.body.parts[0].part_number).toBe(1);
+      expect(
+        res.body.parts[0].url.startsWith(process.env.S3_PUBLIC_ENDPOINT),
+      ).toBe(true);
+      expect(Date.parse(res.body.expires_at)).toBeGreaterThan(Date.now());
+    });
+
+    it('should complete an uploaded video with 202 and status processing', async () => {
+      const slug = await createDraft();
+      await uploadWholeFile(slug);
+
+      const res = await complete(slug).expect(202);
+
+      expect(res.body.status).toBe('processing');
+      const row = await dataSource
+        .getRepository(Video)
+        .findOneByOrFail({ slug });
+      expect(row.status).toBe(VideoStatus.PROCESSING);
+      expect(row.upload_id).toBeNull();
+    });
+
+    it('should let the owner read the video status', async () => {
+      const slug = await createDraft();
+
+      const res = await request(app.getHttpServer())
+        .get(`/videos/${slug}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(res.body.slug).toBe(slug);
+      expect(res.body.status).toBe('draft');
+    });
+
+    it('should return 409 when completing the same upload twice', async () => {
+      const slug = await createDraft();
+      await uploadWholeFile(slug);
+      await complete(slug).expect(202);
+
+      const res = await complete(slug).expect(409);
+
+      expect(res.body.error).toBe('VIDEO_UPLOAD_NOT_IN_PROGRESS');
+    });
+
+    it('should return 422 UPLOAD_INCOMPLETE when parts are missing', async () => {
+      const slug = await createDraft();
+
+      const res = await complete(slug).expect(422);
+
+      expect(res.body.error).toBe('UPLOAD_INCOMPLETE');
+    });
+
+    it('should return 422 for a part number above the part count', async () => {
+      const slug = await createDraft();
+
+      const res = await partUrls(slug, [2]).expect(422);
+
+      expect(res.body.error).toBe('INVALID_PART_NUMBER');
+    });
+
+    it('should return 400 for an invalid part_numbers payload', async () => {
+      const slug = await createDraft();
+
+      const res = await partUrls(slug, [0, 'x']).expect(400);
+
+      expect(res.body.error).toBe('VALIDATION_ERROR');
+    });
+
+    it("should return 403 when another user touches the owner's video", async () => {
+      const slug = await createDraft();
+      clearThrottler(app);
+      const intruder = await registerConfirmAndLogin(
+        app,
+        `intruder_${userCounter}@example.com`,
+      );
+
+      const res = await partUrls(slug, [1], intruder).expect(403);
+      await complete(slug, intruder).expect(403);
+      await request(app.getHttpServer())
+        .get(`/videos/${slug}`)
+        .set('Authorization', `Bearer ${intruder}`)
+        .expect(403);
+
+      expect(res.body.error).toBe('VIDEO_ACCESS_DENIED');
+    });
+
+    it('should return 404 for an unknown slug', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/videos/doesNotExis')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(404);
+
+      expect(res.body.error).toBe('VIDEO_NOT_FOUND');
+    });
+
+    it('should return 401 on owner routes without a token', async () => {
+      const slug = await createDraft();
+
+      await request(app.getHttpServer()).get(`/videos/${slug}`).expect(401);
+      await request(app.getHttpServer())
+        .post(`/videos/${slug}/upload/complete`)
         .expect(401);
     });
   });
