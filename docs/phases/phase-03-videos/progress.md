@@ -78,8 +78,7 @@
 
 ### SI-03.11 — Streaming, download and thumbnail endpoints
 - **Status:** completed
-- **Tests:** videos.service.spec.ts 28/28 (9 new), test/videos.e2e-spec.ts 23/23 (6 new); full suite 230/230, e2e 4
-75
+- **Tests:** videos.service.spec.ts 28/28 (9 new), test/videos.e2e-spec.ts 23/23 (6 new); full suite 230/230, e2e 75/75
 - **Observations:**
   - Delivery e2e tests seed a `ready` video (row + objects in MinIO) instead of completing an upload, because the live Compose worker would otherwise race the test; the real upload→worker→stream path is covered by SI-03.12.
   - Download disposition follows RFC 6266: quoted ASCII fallback plus `filename*=UTF-8''…` — verified end-to-end with a non-ASCII name (`Férias.mp4`).
