@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 7/13 completed
+**SIs:** 8/13 completed
 
 ### SI-03.1 — Infrastructure: object storage, queue broker and FFmpeg in the dev image
 - **Status:** completed
@@ -55,9 +55,11 @@
   - E2E completions enqueue real `process-video` jobs on the default prefix; until the worker container exists (SI-03.10) they wait in Redis — the worker must treat a missing row as a no-op (rows are deleted by test cleanup).
 
 ### SI-03.8 — Media probe service (ffprobe/ffmpeg)
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 13/13 passing (probe-output.mapper.spec.ts 8, media-probe.service.integration-spec.ts 5 with real ffprobe/ffmpeg 5.1.9)
+- **Observations:**
+  - Non-zero FFmpeg exits are classified by stderr: known "not a video" markers (`Invalid data found…`, `moov atom not found`, …) become `InvalidMediaError` (unrecoverable), anything else `MediaToolError` (retried) — so network/storage hiccups are retried while corrupt uploads fail fast.
+  - Probing and thumbnail extraction verified over a presigned MinIO URL (HTTP range reads), the path the worker uses in production.
 
 ### SI-03.9 — Video processing service and BullMQ processor
 - **Status:** pending
