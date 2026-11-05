@@ -32,4 +32,19 @@ export default tseslint.config(
       "prettier/prettier": ["error", { endOfLine: "auto" }],
     },
   },
+  {
+    // Test doubles (jest.fn() mocks) and supertest's `res.body` are typed `any`
+    // by their libraries; asserting on them is the point of a test, so the
+    // type-aware "unsafe" rules are relaxed for test files only.
+    files: ['**/*.spec.ts', '**/*.integration-spec.ts', '**/*.e2e-spec.ts'],
+    rules: {
+      '@typescript-eslint/no-unsafe-assignment': 'off',
+      '@typescript-eslint/no-unsafe-member-access': 'off',
+      '@typescript-eslint/no-unsafe-argument': 'off',
+      '@typescript-eslint/no-unsafe-return': 'off',
+      '@typescript-eslint/no-unsafe-call': 'off',
+      // `expect(mock.method).toHaveBeenCalled()` is idiomatic Jest
+      '@typescript-eslint/unbound-method': 'off',
+    },
+  },
 );
