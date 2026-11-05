@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 2/13 completed
+**SIs:** 3/13 completed
 
 ### SI-03.1 — Infrastructure: object storage, queue broker and FFmpeg in the dev image
 - **Status:** completed
@@ -18,9 +18,11 @@
   - `npm install` resolved `bullmq@6.3.19` (inside the pinned `~6.3.17` range; published 2026-10-20, older than the two-week rule) and `ioredis@5.11.1`, deduped with the copies already pulled transitively by `@nestjs-modules/mailer` and `typeorm`.
 
 ### SI-03.3 — StorageModule: S3 clients and StorageService
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 8/8 passing (storage.service.integration-spec.ts against real MinIO, storage.module.spec.ts)
+- **Observations:**
+  - The `requestChecksumCalculation/responseChecksumValidation: 'WHEN_REQUIRED'` client options (library-refs) let presigned `UploadPart` PUTs succeed with a plain body — no checksum header is required from the uploader.
+  - `presigned-http.ts` test helper sends requests to `S3_ENDPOINT` with the URL's original `Host`, proving the public-endpoint signature without exposing MinIO inside the container as `localhost`.
 
 ### SI-03.4 — Video entity and CreateVideos migration
 - **Status:** pending
