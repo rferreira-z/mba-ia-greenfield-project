@@ -9,10 +9,10 @@ sources_mtime:
 issues:
   - id: AMB-1
     status: open
-    summary: ""rascunho" names both a processing status (F03) and a publication state (F04)"
+    summary: "'rascunho' names both a processing status (F03) and a publication state (F04)"
   - id: AMB-2
     status: open
-    summary: ""até 10GB" unit undefined: 10×10^9 bytes (GB) or 10×1024^3 bytes (GiB)"
+    summary: "'até 10GB' unit undefined: 10×10^9 bytes (GB) or 10×1024^3 bytes (GiB)"
   - id: MD-1
     status: open
     summary: "No TD fixes the canonical env var keys for storage, queue and upload limits"
