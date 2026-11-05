@@ -1,7 +1,7 @@
 ---
 scope_type: phase
 related_phases: [3]
-status: pending
+status: decided
 date: 2026-11-05
 scope_description: "Backend foundation for video upload and processing: queue technology, direct-to-storage upload of files up to 10GB, object storage layout and local S3 server, worker runtime and FFmpeg-based metadata/thumbnail extraction, unique video URLs, streaming/download delivery and access, video status lifecycle, and the test strategy for the new infrastructure."
 ---
@@ -12,6 +12,8 @@ _Subprojects in scope:_
 
 - `nestjs-project/` — backend that receives the upload handshake, owns the `videos` table, publishes processing jobs, hosts the video worker (FFmpeg) and exposes streaming/download endpoints; its `compose.yaml` gains object storage, queue broker and worker services.
 - `next-frontend/` — Frontend deferred: the video upload/player UI is explicitly out of scope for this phase (challenge statement: "a interface de vídeo não faz parte do escopo desta fase"). Cross-layer TDs below (TD-02, TD-07, TD-08, TD-09) fix the HTTP contract the frontend will consume later; no frontend code is produced here.
+
+_Decisions recorded on 2026-11-05 by the maintainer during `/plan-resolve`; every Recommendation was accepted._
 
 _Stack constraints inherited (not reopened):_ NestJS 11 + TypeORM 0.3 + PostgreSQL 17 (phase 01), `@nestjs/config` + Joi env validation (phase-01/TD-01..04), global JWT guard with `@Public()` opt-out (phase-02-auth/TD-02), domain-exception error envelope `{ statusCode, error, message }` (phase-02-auth/TD-07), class-validator DTOs (phase-02-auth/TD-06). Object storage is **S3-compatible** by project definition (`docs/diagrams/software-arch.mermaid`: "S3 or MinIO") — the *what* is given; only *how* it is used is decided here.
 
@@ -44,7 +46,9 @@ _Stack constraints inherited (not reopened):_ NestJS 11 + TypeORM 0.3 + PostgreS
 
 **Recommendation:** **Option A (BullMQ + Redis)** — It is the queue NestJS documents natively, its retry/backoff/unrecoverable-error semantics map 1:1 onto the video status lifecycle (TD-10) without hand-built DLX plumbing, and Redis is a single lightweight container. Postgres-backed queues avoid a service but load the primary DB and (for BullMQ-pg) are too new to bet the phase on.
 
-**Decision:** _[pending]_
+**Decision:** A (BullMQ + Redis via `@nestjs/bullmq`)
+
+**Libraries:** `@nestjs/bullmq@^12.0.0`, `bullmq@~6.3.17`, `ioredis@~5.11.1`
 
 ---
 
@@ -75,7 +79,11 @@ _Stack constraints inherited (not reopened):_ NestJS 11 + TypeORM 0.3 + PostgreS
 
 **Recommendation:** **Option B (presigned S3 multipart, direct to storage)** — It is the only option where the API never carries the 10GB, which is the phase's non-functional requirement, and it stays pure S3 API so MinIO→S3 is a config swap. Proposed parameters (cross-component, to be fixed in the plan): max declared size 10 GiB (10 × 1024³ bytes); server-chosen part size 64 MiB (10 GiB → 160 parts, well under 10,000); presigned part URLs requested in batches of ≤ 100 part numbers; on completion the API reads the uploaded parts with `ListParts` (client does not need to send ETags — avoids CORS `ExposeHeaders` coupling) and rejects completion when parts are missing or total size ≠ declared size.
 
-**Decision:** _[pending]_
+**Decision:** B (Presigned S3 multipart upload, direct to storage)
+
+**Libraries:** `@aws-sdk/client-s3@~3.1153.0`, `@aws-sdk/s3-request-presigner@~3.1153.0`
+
+**Note:** Resolves validation AMB-2 — the maximum declared size is **10 GiB = 10,737,418,240 bytes** (inclusive), which satisfies "até 10GB" under both the decimal (10 × 10⁹) and binary readings; part size 64 MiB (configurable via TD-12, minimum 5 MiB), ≤ 100 part numbers per presign request, completion validated with `ListParts` (total size must equal the declared size).
 
 ---
 
@@ -104,7 +112,9 @@ _Stack constraints inherited (not reopened):_ NestJS 11 + TypeORM 0.3 + PostgreS
 
 **Recommendation:** **Option A** — Private-by-default keeps every later access rule (Fase 04 visibility) enforceable in the API, and the dual-endpoint split is the minimal fix for the SigV4 host problem in Docker. Key layout keyed by the internal video UUID (not the public slug) so slug changes never move objects.
 
-**Decision:** _[pending]_
+**Decision:** A (Single private bucket, per-video key prefix, presigned access, dual endpoint)
+
+**Libraries:** —
 
 ---
 
@@ -133,7 +143,11 @@ _Stack constraints inherited (not reopened):_ NestJS 11 + TypeORM 0.3 + PostgreS
 
 **Recommendation:** **Option A** — Keeps the architecture's MinIO choice intact with a trustworthy, reproducible image; the digest pin documents exactly what was tested. Production still targets AWS S3 (no code change, only env).
 
-**Decision:** _[pending]_
+**Decision:** A (`cgr.dev/chainguard/minio`, pinned by digest)
+
+**Libraries:** —
+
+**Note:** Pinned digest (verified 2026-11-05, `minio RELEASE.2026-10-23T20-06-51Z`): `cgr.dev/chainguard/minio@sha256:cee9a8e35885e93f14b3cb32960e5017aff74e2adfb52ba87c65003b0163886b`. The image's bundled `mc` provides the healthcheck (`mc ready`) and the one-shot bucket creation.
 
 ---
 
@@ -162,7 +176,11 @@ _Stack constraints inherited (not reopened):_ NestJS 11 + TypeORM 0.3 + PostgreS
 
 **Recommendation:** **Option A** — Same-codebase standalone context gives the architectural isolation of a separate container without duplicating the data contract.
 
-**Decision:** _[pending]_
+**Decision:** A (Separate container, same NestJS codebase, standalone application context)
+
+**Libraries:** —
+
+**Note:** Resolves validation DG-1 — FFmpeg (`ffmpeg` + `ffprobe`) is installed in the shared dev image (`nestjs-project/Dockerfile.dev`), used by both `nestjs-api` (tests) and `video-worker`; this infrastructure change is the first step of the plan, ordered before any processing work.
 
 ---
 
@@ -191,7 +209,9 @@ _Stack constraints inherited (not reopened):_ NestJS 11 + TypeORM 0.3 + PostgreS
 
 **Recommendation:** **Option A** — Range reads over a presigned URL make probing a 10GB file cost megabytes, and the CLI avoids a deprecated wrapper. Thumbnail policy (cross-component with storage layout): one JPEG frame at 10% of the duration (falls back to 0s for zero/unknown duration), scaled to at most 1280px wide, stored at `videos/{videoId}/thumbnail.jpg`. Persisted metadata: duration (seconds) plus width, height, video/audio codec, container format, bitrate and frame rate.
 
-**Decision:** _[pending]_
+**Decision:** A (`ffprobe`/`ffmpeg` CLI via `child_process.spawn` over a presigned URL)
+
+**Libraries:** — _(system binary `ffmpeg` from the Debian package in the dev image; no npm wrapper)_
 
 ---
 
@@ -220,7 +240,9 @@ _Stack constraints inherited (not reopened):_ NestJS 11 + TypeORM 0.3 + PostgreS
 
 **Recommendation:** **Option B** — Short, unguessable and stable regardless of title edits; the DB unique constraint guarantees "sem conflito" even under concurrency. The slug is the video's public identifier in every `/videos/{slug}` route; the UUID stays internal (FKs, storage keys).
 
-**Decision:** _[pending]_
+**Decision:** B (Random 11-char base62 slug + `UNIQUE` index, retry on collision)
+
+**Libraries:** —
 
 ---
 
@@ -249,7 +271,9 @@ _Stack constraints inherited (not reopened):_ NestJS 11 + TypeORM 0.3 + PostgreS
 
 **Recommendation:** **Option A** — Delegates range handling to storage, keeps the API out of the data path and satisfies "sem necessidade de download completo" with standard progressive playback. Presigned GET TTL: 1 hour (same `PRESIGNED_URL_EXPIRES_SECONDS` as upload parts). A `GET /videos/{slug}/thumbnail` redirect follows the same pattern for the generated thumbnail.
 
-**Decision:** _[pending]_
+**Decision:** A (302 redirect to short-lived presigned GET; storage serves Range/206)
+
+**Libraries:** —
 
 ---
 
@@ -273,7 +297,9 @@ _Stack constraints inherited (not reopened):_ NestJS 11 + TypeORM 0.3 + PostgreS
 
 **Recommendation:** **Option A** — It delivers a usable unique URL and progressive playback now, keeps the contract stable for Fase 05 (anonymous watch page), and leaks nothing guessable (TD-07 entropy). Non-ready videos answer `409 VIDEO_NOT_READY` on consumption routes; owner-only operations (create, part URLs, complete, status read) stay behind the JWT guard with a channel-ownership check.
 
-**Decision:** _[pending]_
+**Decision:** A (Public for `ready` videos; owner-only management)
+
+**Libraries:** —
 
 ---
 
@@ -302,7 +328,11 @@ _Stack constraints inherited (not reopened):_ NestJS 11 + TypeORM 0.3 + PostgreS
 
 **Recommendation:** **Option A** — Smallest lifecycle that satisfies the capability, reflected in a Postgres enum, with failure reason persisted for the owner. Retries/backoff live in the queue (TD-01) rather than in custom tables.
 
-**Decision:** _[pending]_
+**Decision:** A (`draft → processing → ready | failed` + queue retries, unrecoverable media errors fail fast)
+
+**Libraries:** —
+
+**Note:** Resolves validation AMB-1 — the `status` column models **only the upload/processing lifecycle** (`draft` = upload started, not yet completed). Publication state (rascunho → publicado, Fase 04) is a separate concern Fase 04 will add as its own column; Phase 03 never reuses `status` for publication.
 
 ---
 
@@ -327,7 +357,9 @@ _Stack constraints inherited (not reopened):_ NestJS 11 + TypeORM 0.3 + PostgreS
 
 **Recommendation:** **Option A** — The phase's risk lives in the S3/queue/FFmpeg contracts; only real services prove them. The testing guide's storage section must be updated accordingly once decided.
 
-**Decision:** _[pending]_
+**Decision:** A (Real Compose infrastructure in integration and e2e tests)
+
+**Libraries:** —
 
 ---
 
@@ -356,7 +388,9 @@ _Stack constraints inherited (not reopened):_ NestJS 11 + TypeORM 0.3 + PostgreS
 
 **Recommendation:** **Option A** — Consistent with the inherited per-domain `registerAs` + Joi convention and keeps every value explicit and validated in both processes.
 
-**Decision:** _[pending]_
+**Decision:** A (Explicit prefixed keys per concern, Joi-validated)
+
+**Libraries:** —
 
 ---
 
@@ -385,7 +419,9 @@ _Stack constraints inherited (not reopened):_ NestJS 11 + TypeORM 0.3 + PostgreS
 
 **Recommendation:** **Option A** — With no transcoding in Phase 03, the allowlist keeps uploads aligned with what the streaming capability can actually play, and ffprobe still guards against mislabeled files.
 
-**Decision:** _[pending]_
+**Decision:** A (Allowlist `video/mp4`, `video/webm`, `video/quicktime` + ffprobe as final authority)
+
+**Libraries:** —
 
 ---
 
@@ -393,16 +429,16 @@ _Stack constraints inherited (not reopened):_ NestJS 11 + TypeORM 0.3 + PostgreS
 
 | ID | Scope | Decision | Recommendation | Choice |
 |----|-------|----------|---------------|--------|
-| TD-01 | Backend | Message Queue Technology | BullMQ + Redis (`@nestjs/bullmq`) | _[pending]_ |
-| TD-02 | Cross-layer | Large File Upload Protocol (up to 10GB) | Presigned S3 multipart, direct to storage | _[pending]_ |
-| TD-03 | Backend | Object Storage Layout and Access Model | Single private bucket, per-video prefix, dual endpoint | _[pending]_ |
-| TD-04 | Repo-wide | Local S3-Compatible Server Distribution | Chainguard MinIO build pinned by digest | _[pending]_ |
-| TD-05 | Backend | Video Worker Runtime | Separate container, same codebase, standalone context | _[pending]_ |
-| TD-06 | Backend | Media Metadata and Thumbnail Extraction | ffprobe/ffmpeg CLI over presigned URL | _[pending]_ |
-| TD-07 | Cross-layer | Unique Video URL Identifier | Random 11-char base62 slug + unique index | _[pending]_ |
-| TD-08 | Cross-layer | Streaming and Download Delivery | 302 to presigned GET (storage serves 206) | _[pending]_ |
-| TD-09 | Cross-layer | Access Policy for Video Consumption Endpoints | Public for ready videos; owner-only management | _[pending]_ |
-| TD-10 | Backend | Video Status Lifecycle and Failure Handling | draft → processing → ready/failed + queue retries | _[pending]_ |
-| TD-11 | Backend | Test Strategy for Storage, Queue and Worker | Real Compose infrastructure | _[pending]_ |
-| TD-12 | Repo-wide | Canonical Environment Configuration for Storage, Queue and Upload | Explicit prefixed keys, Joi-validated | _[pending]_ |
-| TD-13 | Cross-layer | Accepted Upload Media Types | Allowlist mp4/webm/quicktime + ffprobe | _[pending]_ |
+| TD-01 | Backend | Message Queue Technology | BullMQ + Redis (`@nestjs/bullmq`) | A |
+| TD-02 | Cross-layer | Large File Upload Protocol (up to 10GB) | Presigned S3 multipart, direct to storage | B |
+| TD-03 | Backend | Object Storage Layout and Access Model | Single private bucket, per-video prefix, dual endpoint | A |
+| TD-04 | Repo-wide | Local S3-Compatible Server Distribution | Chainguard MinIO build pinned by digest | A |
+| TD-05 | Backend | Video Worker Runtime | Separate container, same codebase, standalone context | A |
+| TD-06 | Backend | Media Metadata and Thumbnail Extraction | ffprobe/ffmpeg CLI over presigned URL | A |
+| TD-07 | Cross-layer | Unique Video URL Identifier | Random 11-char base62 slug + unique index | B |
+| TD-08 | Cross-layer | Streaming and Download Delivery | 302 to presigned GET (storage serves 206) | A |
+| TD-09 | Cross-layer | Access Policy for Video Consumption Endpoints | Public for ready videos; owner-only management | A |
+| TD-10 | Backend | Video Status Lifecycle and Failure Handling | draft → processing → ready/failed + queue retries | A |
+| TD-11 | Backend | Test Strategy for Storage, Queue and Worker | Real Compose infrastructure | A |
+| TD-12 | Repo-wide | Canonical Environment Configuration for Storage, Queue and Upload | Explicit prefixed keys, Joi-validated | A |
+| TD-13 | Cross-layer | Accepted Upload Media Types | Allowlist mp4/webm/quicktime + ffprobe | A |

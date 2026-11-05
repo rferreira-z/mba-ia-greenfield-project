@@ -3,7 +3,7 @@ kind: phase
 name: phase-03-videos
 sources_mtime:
   docs/project-plan.md: "2026-11-05T19:48:40-03:00"
-  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-05T20:22:16-03:00"
+  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-05T20:23:27-03:00"
   docs/phases/phase-01-configuracao-base/context.md: "2026-11-05T19:48:49-03:00"
   docs/phases/phase-02-auth/context.md: "2026-11-05T19:48:49-03:00"
   docs/phases/phase-02-auth-frontend/context.md: "2026-11-05T19:48:49-03:00"
@@ -47,19 +47,19 @@ sources_mtime:
 
 | Ref | Source | Scope | Topic | Status | Decision | Libraries |
 |-----|--------|-------|-------|--------|----------|-----------|
-| phase-03-videos/TD-01 | technical-decisions-phase-03-videos.md | Backend | Message Queue Technology | pending | — | — |
-| phase-03-videos/TD-02 | technical-decisions-phase-03-videos.md | Cross-layer | Large File Upload Protocol (up to 10GB) | pending | — | — |
-| phase-03-videos/TD-03 | technical-decisions-phase-03-videos.md | Backend | Object Storage Layout and Access Model | pending | — | — |
-| phase-03-videos/TD-04 | technical-decisions-phase-03-videos.md | Repo-wide | Local S3-Compatible Server Distribution | pending | — | — |
-| phase-03-videos/TD-05 | technical-decisions-phase-03-videos.md | Backend | Video Worker Runtime | pending | — | — |
-| phase-03-videos/TD-06 | technical-decisions-phase-03-videos.md | Backend | Media Metadata and Thumbnail Extraction | pending | — | — |
-| phase-03-videos/TD-07 | technical-decisions-phase-03-videos.md | Cross-layer | Unique Video URL Identifier | pending | — | — |
-| phase-03-videos/TD-08 | technical-decisions-phase-03-videos.md | Cross-layer | Streaming and Download Delivery | pending | — | — |
-| phase-03-videos/TD-09 | technical-decisions-phase-03-videos.md | Cross-layer | Access Policy for Video Consumption Endpoints in Phase 03 | pending | — | — |
-| phase-03-videos/TD-10 | technical-decisions-phase-03-videos.md | Backend | Video Status Lifecycle and Failure Handling | pending | — | — |
-| phase-03-videos/TD-11 | technical-decisions-phase-03-videos.md | Backend | Test Strategy for Storage, Queue and Worker | pending | — | — |
-| phase-03-videos/TD-12 | technical-decisions-phase-03-videos.md | Repo-wide | Canonical Environment Configuration for Storage, Queue and Upload | pending | — | — |
-| phase-03-videos/TD-13 | technical-decisions-phase-03-videos.md | Cross-layer | Accepted Upload Media Types | pending | — | — |
+| phase-03-videos/TD-01 | technical-decisions-phase-03-videos.md | Backend | Message Queue Technology | decided | A (BullMQ + Redis via `@nestjs/bullmq`) | `@nestjs/bullmq@^12.0.0`, `bullmq@~6.3.17`, `ioredis@~5.11.1` |
+| phase-03-videos/TD-02 | technical-decisions-phase-03-videos.md | Cross-layer | Large File Upload Protocol (up to 10GB) | decided | B (Presigned S3 multipart upload, direct to storage) | `@aws-sdk/client-s3@~3.1153.0`, `@aws-sdk/s3-request-presigner@~3.1153.0` |
+| phase-03-videos/TD-03 | technical-decisions-phase-03-videos.md | Backend | Object Storage Layout and Access Model | decided | A (Single private bucket, per-video key prefix, presigned access, dual endpoint) | — |
+| phase-03-videos/TD-04 | technical-decisions-phase-03-videos.md | Repo-wide | Local S3-Compatible Server Distribution | decided | A (`cgr.dev/chainguard/minio`, pinned by digest) | — |
+| phase-03-videos/TD-05 | technical-decisions-phase-03-videos.md | Backend | Video Worker Runtime | decided | A (Separate container, same NestJS codebase, standalone application context) | — |
+| phase-03-videos/TD-06 | technical-decisions-phase-03-videos.md | Backend | Media Metadata and Thumbnail Extraction | decided | A (`ffprobe`/`ffmpeg` CLI via `child_process.spawn` over a presigned URL) | — _(system binary `ffmpeg` from the Debian package in the dev image; no npm wrapper)_ |
+| phase-03-videos/TD-07 | technical-decisions-phase-03-videos.md | Cross-layer | Unique Video URL Identifier | decided | B (Random 11-char base62 slug + `UNIQUE` index, retry on collision) | — |
+| phase-03-videos/TD-08 | technical-decisions-phase-03-videos.md | Cross-layer | Streaming and Download Delivery | decided | A (302 redirect to short-lived presigned GET; storage serves Range/206) | — |
+| phase-03-videos/TD-09 | technical-decisions-phase-03-videos.md | Cross-layer | Access Policy for Video Consumption Endpoints in Phase 03 | decided | A (Public for `ready` videos; owner-only management) | — |
+| phase-03-videos/TD-10 | technical-decisions-phase-03-videos.md | Backend | Video Status Lifecycle and Failure Handling | decided | A (`draft → processing → ready | failed` + queue retries, unrecoverable media errors fail fast) | — |
+| phase-03-videos/TD-11 | technical-decisions-phase-03-videos.md | Backend | Test Strategy for Storage, Queue and Worker | decided | A (Real Compose infrastructure in integration and e2e tests) | — |
+| phase-03-videos/TD-12 | technical-decisions-phase-03-videos.md | Repo-wide | Canonical Environment Configuration for Storage, Queue and Upload | decided | A (Explicit prefixed keys per concern, Joi-validated) | — |
+| phase-03-videos/TD-13 | technical-decisions-phase-03-videos.md | Cross-layer | Accepted Upload Media Types | decided | A (Allowlist `video/mp4`, `video/webm`, `video/quicktime` + ffprobe as final authority) | — |
 
 _Source files:_
 
@@ -81,7 +81,83 @@ _Source files:_
 
 ## Decisions Detail
 
-_No decided TDs yet — all phase-03-videos TDs are `pending`._
+### phase-03-videos/TD-01
+
+**Recommendation:** It is the queue NestJS documents natively, its retry/backoff/unrecoverable-error semantics map 1:1 onto the video status lifecycle (TD-10) without hand-built DLX plumbing, and Redis is a single lightweight container. Postgres-backed queues avoid a service but load the primary DB and (for BullMQ-pg) are too new to bet the phase on.
+
+**Libraries:** `@nestjs/bullmq@^12.0.0`, `bullmq@~6.3.17`, `ioredis@~5.11.1`
+
+### phase-03-videos/TD-02
+
+**Recommendation:** It is the only option where the API never carries the 10GB, which is the phase's non-functional requirement, and it stays pure S3 API so MinIO→S3 is a config swap. Proposed parameters (cross-component, to be fixed in the plan): max declared size 10 GiB (10 × 1024³ bytes); server-chosen part size 64 MiB (10 GiB → 160 parts, well under 10,000); presigned part URLs requested in batches of ≤ 100 part numbers; on completion the API reads the uploaded parts with `ListParts` (client does not need to send ETags — avoids CORS `ExposeHeaders` coupling) and rejects completion when parts are missing or total size ≠ declared size.
+
+**Libraries:** `@aws-sdk/client-s3@~3.1153.0`, `@aws-sdk/s3-request-presigner@~3.1153.0`
+
+### phase-03-videos/TD-03
+
+**Recommendation:** Private-by-default keeps every later access rule (Fase 04 visibility) enforceable in the API, and the dual-endpoint split is the minimal fix for the SigV4 host problem in Docker. Key layout keyed by the internal video UUID (not the public slug) so slug changes never move objects.
+
+**Libraries:** —
+
+### phase-03-videos/TD-04
+
+**Recommendation:** Keeps the architecture's MinIO choice intact with a trustworthy, reproducible image; the digest pin documents exactly what was tested. Production still targets AWS S3 (no code change, only env).
+
+**Libraries:** —
+
+### phase-03-videos/TD-05
+
+**Recommendation:** Same-codebase standalone context gives the architectural isolation of a separate container without duplicating the data contract.
+
+**Libraries:** —
+
+### phase-03-videos/TD-06
+
+**Recommendation:** Range reads over a presigned URL make probing a 10GB file cost megabytes, and the CLI avoids a deprecated wrapper. Thumbnail policy (cross-component with storage layout): one JPEG frame at 10% of the duration (falls back to 0s for zero/unknown duration), scaled to at most 1280px wide, stored at `videos/{videoId}/thumbnail.jpg`. Persisted metadata: duration (seconds) plus width, height, video/audio codec, container format, bitrate and frame rate.
+
+**Libraries:** — _(system binary `ffmpeg` from the Debian package in the dev image; no npm wrapper)_
+
+### phase-03-videos/TD-07
+
+**Recommendation:** Short, unguessable and stable regardless of title edits; the DB unique constraint guarantees "sem conflito" even under concurrency. The slug is the video's public identifier in every `/videos/{slug}` route; the UUID stays internal (FKs, storage keys).
+
+**Libraries:** —
+
+### phase-03-videos/TD-08
+
+**Recommendation:** Delegates range handling to storage, keeps the API out of the data path and satisfies "sem necessidade de download completo" with standard progressive playback. Presigned GET TTL: 1 hour (same `PRESIGNED_URL_EXPIRES_SECONDS` as upload parts). A `GET /videos/{slug}/thumbnail` redirect follows the same pattern for the generated thumbnail.
+
+**Libraries:** —
+
+### phase-03-videos/TD-09
+
+**Recommendation:** It delivers a usable unique URL and progressive playback now, keeps the contract stable for Fase 05 (anonymous watch page), and leaks nothing guessable (TD-07 entropy). Non-ready videos answer `409 VIDEO_NOT_READY` on consumption routes; owner-only operations (create, part URLs, complete, status read) stay behind the JWT guard with a channel-ownership check.
+
+**Libraries:** —
+
+### phase-03-videos/TD-10
+
+**Recommendation:** Smallest lifecycle that satisfies the capability, reflected in a Postgres enum, with failure reason persisted for the owner. Retries/backoff live in the queue (TD-01) rather than in custom tables.
+
+**Libraries:** —
+
+### phase-03-videos/TD-11
+
+**Recommendation:** The phase's risk lives in the S3/queue/FFmpeg contracts; only real services prove them. The testing guide's storage section must be updated accordingly once decided.
+
+**Libraries:** —
+
+### phase-03-videos/TD-12
+
+**Recommendation:** Consistent with the inherited per-domain `registerAs` + Joi convention and keeps every value explicit and validated in both processes.
+
+**Libraries:** —
+
+### phase-03-videos/TD-13
+
+**Recommendation:** With no transcoding in Phase 03, the allowlist keeps uploads aligned with what the streaming capability can actually play, and ffprobe still guards against mislabeled files.
+
+**Libraries:** —
 
 ## Inherited Decisions Detail
 
