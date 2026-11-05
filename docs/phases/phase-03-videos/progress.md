@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 9/13 completed
+**SIs:** 10/13 completed
 
 ### SI-03.1 — Infrastructure: object storage, queue broker and FFmpeg in the dev image
 - **Status:** completed
@@ -70,9 +70,11 @@
   - Missing rows are treated as a no-op (`skipped`) — needed because E2E cleanup deletes videos whose jobs are still queued.
 
 ### SI-03.10 — Video worker container
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** no tests (Infra) — worker verified live: started, drained 8 queued jobs, graceful restart in ~1s; full suite 221/221, e2e 69/69, build OK
+- **Observations:**
+  - `tsconfig.build.json` only excluded `dist`, so the worker's `dist-worker` output was read back as input (TS5055 "would overwrite input file"). Excluded `dist-worker` in `tsconfig.worker.json`, `tsconfig.build.json` and `tsconfig.json` (minimal edits, no reformatting).
+  - With a live worker, the e2e assertion right after completion now checks `status !== draft` instead of exactly `processing` (the worker may already have moved it on).
 
 ### SI-03.11 — Streaming, download and thumbnail endpoints
 - **Status:** pending
