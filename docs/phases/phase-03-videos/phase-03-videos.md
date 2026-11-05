@@ -3,9 +3,9 @@ kind: phase
 name: phase-03-videos
 test_specs_aware: true
 sources_mtime:
-  docs/phases/phase-03-videos/context.md: "2026-11-05T20:25:43-03:00"
-  docs/phases/phase-03-videos/library-refs.md: "2026-11-05T20:25:50-03:00"
-  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-05T20:25:43-03:00"
+  docs/phases/phase-03-videos/context.md: "2026-11-05T20:41:29-03:00"
+  docs/phases/phase-03-videos/library-refs.md: "2026-11-05T20:41:30-03:00"
+  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-05T20:41:29-03:00"
 ---
 
 # Phase 03 — Upload e Processamento de Vídeos
@@ -52,7 +52,7 @@ _Test specs:_ no SI carries a `**Test Specs:**` field — HTTP behaviour is cove
 
 **Technical actions:**
 
-- Install in `nestjs-project`: `@nestjs/bullmq@^12.0.0`, `bullmq@~6.3.17`, `ioredis@~5.11.1`, `@aws-sdk/client-s3@~3.1153.0`, `@aws-sdk/s3-request-presigner@~3.1153.0` (per `phase-03-videos/TD-01`, `phase-03-videos/TD-02`; versions per `library-refs.md`)
+- Install in `nestjs-project`: `@nestjs/bullmq@~11.0.5`, `bullmq@~6.3.17`, `ioredis@~5.11.1`, `@aws-sdk/client-s3@~3.1153.0`, `@aws-sdk/s3-request-presigner@~3.1153.0` (per `phase-03-videos/TD-01`, `phase-03-videos/TD-02`; versions per `library-refs.md`)
 - Create `src/config/storage.config.ts` — `registerAs('storage', …)` mapping the `S3_*`, `PRESIGNED_URL_EXPIRES_SECONDS` and `UPLOAD_PART_SIZE_MB` keys of `### Configuration Keys` (part size exposed in bytes) (per `phase-03-videos/TD-12`)
 - Create `src/config/queue.config.ts` — `registerAs('queue', …)` mapping `REDIS_HOST`, `REDIS_PORT`, `QUEUE_PREFIX` (per `phase-03-videos/TD-12`)
 - Extend `src/config/env.validation.ts` with every key of `### Configuration Keys` (types, defaults, `UPLOAD_PART_SIZE_MB` min 5 / max 5120, `PRESIGNED_URL_EXPIRES_SECONDS` 60–604800) and load both namespaces in `AppModule`'s `ConfigModule.forRoot`

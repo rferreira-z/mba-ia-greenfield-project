@@ -48,7 +48,10 @@ _Stack constraints inherited (not reopened):_ NestJS 11 + TypeORM 0.3 + PostgreS
 
 **Decision:** A (BullMQ + Redis via `@nestjs/bullmq`)
 
-**Libraries:** `@nestjs/bullmq@^12.0.0`, `bullmq@~6.3.17`, `ioredis@~5.11.1`
+**Libraries:** `@nestjs/bullmq@~11.0.5`, `bullmq@~6.3.17`, `ioredis@~5.11.1`
+
+**Revisions:**
+- 2026-11-05 — `@nestjs/bullmq` pinned to `~11.0.5` instead of `^12.0.0` (same Option A). Rationale: found while implementing SI-03.5 — `@nestjs/bullmq@12` ships as an ES module (`"type": "module"`) for the Nest 12 line, and Jest's CommonJS runtime in this Nest 11 project cannot load it (`SyntaxError: Unexpected token 'export'`); `11.0.5` (2026-08-07) is CommonJS, supports Nest 11 and `bullmq ^6`, with the same API.
 
 ---
 

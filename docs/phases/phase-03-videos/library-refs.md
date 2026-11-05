@@ -1,7 +1,7 @@
 ---
 libs:
   "@nestjs/bullmq":
-    version: "^12.0.0"
+    version: "~11.0.5"
     context7_id: "/nestjs/bull"
     fetched_at: "2026-11-05T20:25:21-03:00"
   bullmq:
@@ -21,18 +21,18 @@ libs:
     context7_id: "/websites/aws_amazon_sdk-for-javascript_v3_developer-guide"
     fetched_at: "2026-11-05T20:25:21-03:00"
 sources_mtime:
-  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-05T20:25:43-03:00"
+  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-05T20:41:29-03:00"
 ---
 
 # phase-03-videos — Library References
 
 Distilled docs for the libraries decided in this phase, pulled via Context7 and cross-checked against the **published type declarations of the pinned versions** (`npm pack` of `@aws-sdk/client-s3@3.1153.0` and `bullmq@6.3.17`). Re-fetch when the underlying TD changes.
 
-Version pinning rationale: every pinned version was published at least two weeks before 2026-11-05 (`bullmq@6.3.17` 2026-10-18, `@aws-sdk/*@3.1153.0` 2026-10-19, `@nestjs/bullmq@12.0.0` 2026-08-27, `ioredis@5.11.1` 2026-06-04). `ioredis@5.11.1` is the exact version `bullmq@6.3.17` uses in its own `devDependencies`; in BullMQ 6 `ioredis` became an **optional peer dependency**, so it must be installed explicitly.
+Version pinning rationale: every pinned version was published at least two weeks before 2026-11-05 (`bullmq@6.3.17` 2026-10-18, `@aws-sdk/*@3.1153.0` 2026-10-19, `@nestjs/bullmq@11.0.5` 2026-08-07, `ioredis@5.11.1` 2026-06-04). `ioredis@5.11.1` is the exact version `bullmq@6.3.17` uses in its own `devDependencies`; in BullMQ 6 `ioredis` became an **optional peer dependency**, so it must be installed explicitly.
 
 ## @nestjs/bullmq — `phase-03-videos/TD-01`
 
-**Source:** `/nestjs/bull` (Context7, trust 9.7). Peer range verified: `bullmq ^3 || ^4 || ^5 || ^6`, `@nestjs/common|core ^10 || ^11 || ^12`.
+**Source:** `/nestjs/bull` (Context7, trust 9.7). Pinned to `~11.0.5` (peer: `bullmq ^3 || ^4 || ^5 || ^6`, `@nestjs/common|core ^10 || ^11`). **Do not use `12.x` in this project:** it is published as an ES module (`"type": "module"`) for Nest 12 and cannot be loaded by Jest's CommonJS runtime (see `phase-03-videos/TD-01` Revisions). The decorators/module API documented below is identical in 11.0.5.
 
 ### Shared connection (async, from config)
 

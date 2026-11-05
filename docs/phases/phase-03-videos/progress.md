@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 4/13 completed
+**SIs:** 5/13 completed
 
 ### SI-03.1 — Infrastructure: object storage, queue broker and FFmpeg in the dev image
 - **Status:** completed
@@ -32,9 +32,11 @@
   - Adding the inverse `Channel.videos` relation required `Video` in every test DataSource entity list (10 existing specs updated mechanically) and a minimal `VideosModule` with `TypeOrmModule.forFeature([Video])` registered in `AppModule` — otherwise `autoLoadEntities` never loads `Video` and `Channel` metadata fails at boot (caught by `openapi-export.integration-spec.ts`). SI-03.6 extends this module.
 
 ### SI-03.5 — Video processing queue: BullMQ connection and job producer
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 4/4 passing (video-processing.producer.integration-spec.ts 3 against real Redis, video-processing-queue.module.spec.ts 1); full suite 168/168, e2e 52/52
+- **Observations:**
+  - **Library drift:** `@nestjs/bullmq@12.0.0` is published as an ES module (Nest 12 line) and Jest's CommonJS runtime fails with `Unexpected token 'export'`. Pinned `@nestjs/bullmq@~11.0.5` (CommonJS, Nest 11, `bullmq ^6`) and recorded it as a Revision of `phase-03-videos/TD-01`; `library-refs.md`, the plan (SI-03.2) and `context.md` were refreshed and `/plan-validate` re-run (still clean).
+  - Producer tests use a random BullMQ `prefix` and `queue.obliterate()` so the Compose `video-worker` never consumes them.
 
 ### SI-03.6 — Create video upload (draft pre-registration)
 - **Status:** pending

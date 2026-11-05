@@ -3,7 +3,7 @@ kind: phase
 name: phase-03-videos
 sources_mtime:
   docs/project-plan.md: "2026-11-05T19:48:40-03:00"
-  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-05T20:25:43-03:00"
+  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-05T20:41:29-03:00"
   docs/phases/phase-01-configuracao-base/context.md: "2026-11-05T19:48:49-03:00"
   docs/phases/phase-02-auth/context.md: "2026-11-05T19:48:49-03:00"
   docs/phases/phase-02-auth-frontend/context.md: "2026-11-05T19:48:49-03:00"
@@ -47,7 +47,7 @@ sources_mtime:
 
 | Ref | Source | Scope | Topic | Status | Decision | Libraries |
 |-----|--------|-------|-------|--------|----------|-----------|
-| phase-03-videos/TD-01 | technical-decisions-phase-03-videos.md | Backend | Message Queue Technology | decided | A (BullMQ + Redis via `@nestjs/bullmq`) | `@nestjs/bullmq@^12.0.0`, `bullmq@~6.3.17`, `ioredis@~5.11.1` |
+| phase-03-videos/TD-01 | technical-decisions-phase-03-videos.md | Backend | Message Queue Technology | decided | A (BullMQ + Redis via `@nestjs/bullmq`) | `@nestjs/bullmq@~11.0.5`, `bullmq@~6.3.17`, `ioredis@~5.11.1` |
 | phase-03-videos/TD-02 | technical-decisions-phase-03-videos.md | Cross-layer | Large File Upload Protocol (up to 10GB) | decided | B (Presigned S3 multipart upload, direct to storage) | `@aws-sdk/client-s3@~3.1153.0`, `@aws-sdk/s3-request-presigner@~3.1153.0` |
 | phase-03-videos/TD-03 | technical-decisions-phase-03-videos.md | Backend | Object Storage Layout and Access Model | decided | A (Single private bucket, per-video key prefix, presigned access, dual endpoint) | — |
 | phase-03-videos/TD-04 | technical-decisions-phase-03-videos.md | Repo-wide | Local S3-Compatible Server Distribution | decided | A (`cgr.dev/chainguard/minio`, pinned by digest) | — |
@@ -85,7 +85,10 @@ _Source files:_
 
 **Recommendation:** It is the queue NestJS documents natively, its retry/backoff/unrecoverable-error semantics map 1:1 onto the video status lifecycle (TD-10) without hand-built DLX plumbing, and Redis is a single lightweight container. Postgres-backed queues avoid a service but load the primary DB and (for BullMQ-pg) are too new to bet the phase on.
 
-**Libraries:** `@nestjs/bullmq@^12.0.0`, `bullmq@~6.3.17`, `ioredis@~5.11.1`
+**Libraries:** `@nestjs/bullmq@~11.0.5`, `bullmq@~6.3.17`, `ioredis@~5.11.1`
+
+**Revisions:**
+- 2026-11-05 — `@nestjs/bullmq` pinned to `~11.0.5` instead of `^12.0.0` (same Option A). Rationale: found while implementing SI-03.5 — `@nestjs/bullmq@12` ships as an ES module (`"type": "module"`) for the Nest 12 line, and Jest's CommonJS runtime in this Nest 11 project cannot load it (`SyntaxError: Unexpected token 'export'`); `11.0.5` (2026-08-07) is CommonJS, supports Nest 11 and `bullmq ^6`, with the same API.
 
 ### phase-03-videos/TD-02
 
