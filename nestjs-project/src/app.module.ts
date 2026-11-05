@@ -1,6 +1,6 @@
 import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
-import { ConfigModule, ConfigType } from '@nestjs/config';
+import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -13,6 +13,8 @@ import queueConfig from './config/queue.config';
 import storageConfig from './config/storage.config';
 import swaggerConfig from './config/swagger.config';
 import { envValidationSchema } from './config/env.validation';
+import { buildTypeOrmOptions } from './database/typeorm-options.factory';
+import { buildBullOptions } from './video-processing/bull-options.factory';
 import { VideosModule } from './videos/videos.module';
 
 @Module({
@@ -34,23 +36,11 @@ import { VideosModule } from './videos/videos.module';
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       inject: [databaseConfig.KEY],
-      useFactory: (dbConfig: ConfigType<typeof databaseConfig>) => ({
-        type: 'postgres',
-        host: dbConfig.host,
-        port: dbConfig.port,
-        username: dbConfig.username,
-        password: dbConfig.password,
-        database: dbConfig.name,
-        autoLoadEntities: true,
-        synchronize: false,
-      }),
+      useFactory: buildTypeOrmOptions,
     }),
     BullModule.forRootAsync({
       inject: [queueConfig.KEY],
-      useFactory: (queue: ConfigType<typeof queueConfig>) => ({
-        connection: { host: queue.redisHost, port: queue.redisPort },
-        prefix: queue.prefix,
-      }),
+      useFactory: buildBullOptions,
     }),
     AuthModule,
     VideosModule,

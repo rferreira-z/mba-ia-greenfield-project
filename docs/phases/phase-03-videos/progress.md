@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 8/13 completed
+**SIs:** 9/13 completed
 
 ### SI-03.1 — Infrastructure: object storage, queue broker and FFmpeg in the dev image
 - **Status:** completed
@@ -62,9 +62,12 @@
   - Probing and thumbnail extraction verified over a presigned MinIO URL (HTTP range reads), the path the worker uses in production.
 
 ### SI-03.9 — Video processing service and BullMQ processor
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 24/24 passing (video.processor.spec.ts 5, video-processing.service.integration-spec.ts 5 against Postgres + MinIO + FFmpeg, worker.module.spec.ts 1, plus SI-03.8 suites); `nest build` emits `dist/worker.js`
+- **Observations:**
+  - The root TypeORM/BullMQ factories were extracted to `database/typeorm-options.factory.ts` and `video-processing/bull-options.factory.ts` so AppModule and WorkerModule build identical connections (no duplicated config).
+  - WorkerModule imports UsersModule purely for entity metadata: `Video.channel → Channel → User` must be registered via `forFeature` for `autoLoadEntities`.
+  - Missing rows are treated as a no-op (`skipped`) — needed because E2E cleanup deletes videos whose jobs are still queued.
 
 ### SI-03.10 — Video worker container
 - **Status:** pending
