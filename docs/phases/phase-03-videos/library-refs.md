@@ -21,7 +21,7 @@ libs:
     context7_id: "/websites/aws_amazon_sdk-for-javascript_v3_developer-guide"
     fetched_at: "2026-11-05T20:42:00-03:00"
 sources_mtime:
-  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-05T20:23:27-03:00"
+  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-05T20:25:43-03:00"
 ---
 
 # phase-03-videos — Library References

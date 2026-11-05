@@ -361,6 +361,9 @@ _Stack constraints inherited (not reopened):_ NestJS 11 + TypeORM 0.3 + PostgreS
 
 **Libraries:** —
 
+**Revisions:**
+- 2026-11-05 — Reaffirmed after validation ICC-1: this TD supersedes the `testing-guide-nestjs-project` storage strategy ("local filesystem adapter") for this project; the phase plan must update `references/external-systems.md` (object storage → real MinIO; queue → BullMQ/Redis with an isolated prefix for producer tests). Rationale: the guide was written before the storage technology existed and its filesystem adapter cannot exercise presigned multipart or range/206 semantics.
+
 ---
 
 ## TD-12: Canonical Environment Configuration for Storage, Queue and Upload

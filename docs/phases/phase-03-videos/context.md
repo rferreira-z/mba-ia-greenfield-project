@@ -3,7 +3,7 @@ kind: phase
 name: phase-03-videos
 sources_mtime:
   docs/project-plan.md: "2026-11-05T19:48:40-03:00"
-  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-05T20:23:27-03:00"
+  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-05T20:25:43-03:00"
   docs/phases/phase-01-configuracao-base/context.md: "2026-11-05T19:48:49-03:00"
   docs/phases/phase-02-auth/context.md: "2026-11-05T19:48:49-03:00"
   docs/phases/phase-02-auth-frontend/context.md: "2026-11-05T19:48:49-03:00"
@@ -146,6 +146,9 @@ _Source files:_
 **Recommendation:** The phase's risk lives in the S3/queue/FFmpeg contracts; only real services prove them. The testing guide's storage section must be updated accordingly once decided.
 
 **Libraries:** —
+
+**Revisions:**
+- 2026-11-05 — Reaffirmed after validation ICC-1: this TD supersedes the `testing-guide-nestjs-project` storage strategy ("local filesystem adapter") for this project; the phase plan must update `references/external-systems.md` (object storage → real MinIO; queue → BullMQ/Redis with an isolated prefix for producer tests). Rationale: the guide was written before the storage technology existed and its filesystem adapter cannot exercise presigned multipart or range/206 semantics.
 
 ### phase-03-videos/TD-12
 

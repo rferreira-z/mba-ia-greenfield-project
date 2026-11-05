@@ -1,11 +1,11 @@
 ---
 kind: phase
 name: phase-03-videos
-status: dirty
-issue_count: 1
+status: clean
+issue_count: 0
 sources_mtime:
-  docs/phases/phase-03-videos/context.md: "2026-11-05T20:25:20-03:00"
-  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-05T20:23:27-03:00"
+  docs/phases/phase-03-videos/context.md: "2026-11-05T20:25:43-03:00"
+  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-05T20:25:43-03:00"
 issues:
   - id: AMB-1
     status: resolved
@@ -80,8 +80,9 @@ issues:
     summary: "TD-13 pending — Accepted Upload Media Types"
     resolved_by: phase-03-videos/TD-13
   - id: ICC-1
-    status: open
+    status: resolved
     summary: "TD-11 (real MinIO in tests) conflicts with testing guide storage strategy"
+    resolved_by: phase-03-videos/TD-11
 advisories: []
 ---
 
@@ -103,7 +104,7 @@ _None._
 _None._
 ### Inherited Constraint Conflicts
 
-- **ICC-1** — Decided phase-03-videos/TD-11 (A — real MinIO/Redis/FFmpeg from Compose in integration and e2e tests) contradicts the inherited testing requirement in `## Testing Requirements` ("Service with side-effect dep (email, storage) | Integration: real capture service (Mailpit) **or local adapter**") and the `testing-guide-nestjs-project` reference `references/external-systems.md` § "Object Storage — Local Filesystem" ("Local filesystem storage in development and tests. S3 in production."). Following the guide would require a storage abstraction with a filesystem adapter that cannot exercise presigned multipart or range/206 (TD-02/TD-08). Explicit choice: (a) reaffirm TD-11 and record that the guide's storage section is superseded for this project (the plan must update `references/external-systems.md` and its queue section, which is still "TBD"); or (b) supersede TD-11 in favour of the filesystem adapter.
+_None._
 ### Unresolved Open Questions
 
 _None._
@@ -131,3 +132,4 @@ _None._ _(No UI scope in this phase.)_
 - **OQ-11** _(resolved_by phase-03-videos/TD-11)_ — TD-11 pending — Test Strategy for Storage, Queue and Worker. Decision recorded (Recommendation accepted).
 - **OQ-12** _(resolved_by phase-03-videos/TD-12)_ — TD-12 pending — Canonical Environment Configuration for Storage, Queue and Uploa. Decision recorded (Recommendation accepted).
 - **OQ-13** _(resolved_by phase-03-videos/TD-13)_ — TD-13 pending — Accepted Upload Media Types. Decision recorded (Recommendation accepted).
+- **ICC-1** _(resolved_by phase-03-videos/TD-11)_ — TD-11 (real MinIO in tests) conflicts with testing guide storage strategy. Option (a): TD-11 reaffirmed with a **Revisions:** entry; testing guide update becomes a plan deliverable.
