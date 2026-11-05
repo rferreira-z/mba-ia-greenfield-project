@@ -1,8 +1,8 @@
 ---
 kind: phase
 name: phase-03-videos
-status: clean
-issue_count: 0
+status: dirty
+issue_count: 1
 sources_mtime:
   docs/phases/phase-03-videos/context.md: "2026-11-05T20:25:20-03:00"
   docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-05T20:23:27-03:00"
@@ -79,6 +79,9 @@ issues:
     status: resolved
     summary: "TD-13 pending — Accepted Upload Media Types"
     resolved_by: phase-03-videos/TD-13
+  - id: ICC-1
+    status: open
+    summary: "TD-11 (real MinIO in tests) conflicts with testing guide storage strategy"
 advisories: []
 ---
 
@@ -100,7 +103,7 @@ _None._
 _None._
 ### Inherited Constraint Conflicts
 
-_None._ _(No current-scope TD is decided yet; conflicts are evaluated against decided TDs only.)_
+- **ICC-1** — Decided phase-03-videos/TD-11 (A — real MinIO/Redis/FFmpeg from Compose in integration and e2e tests) contradicts the inherited testing requirement in `## Testing Requirements` ("Service with side-effect dep (email, storage) | Integration: real capture service (Mailpit) **or local adapter**") and the `testing-guide-nestjs-project` reference `references/external-systems.md` § "Object Storage — Local Filesystem" ("Local filesystem storage in development and tests. S3 in production."). Following the guide would require a storage abstraction with a filesystem adapter that cannot exercise presigned multipart or range/206 (TD-02/TD-08). Explicit choice: (a) reaffirm TD-11 and record that the guide's storage section is superseded for this project (the plan must update `references/external-systems.md` and its queue section, which is still "TBD"); or (b) supersede TD-11 in favour of the filesystem adapter.
 ### Unresolved Open Questions
 
 _None._
