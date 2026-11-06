@@ -128,4 +128,31 @@ describe('exportSpec (integration)', () => {
       }
     }
   });
+
+  it('documents every video route under the "videos" tag (phase 03)', () => {
+    const paths = document.paths as Record<
+      string,
+      Record<string, Record<string, unknown>>
+    >;
+    const expected: Array<{ path: string; method: string; public: boolean }> = [
+      { path: '/videos', method: 'post', public: false },
+      {
+        path: '/videos/{slug}/upload/part-urls',
+        method: 'post',
+        public: false,
+      },
+      { path: '/videos/{slug}/upload/complete', method: 'post', public: false },
+      { path: '/videos/{slug}', method: 'get', public: false },
+      { path: '/videos/{slug}/stream', method: 'get', public: true },
+      { path: '/videos/{slug}/download', method: 'get', public: true },
+      { path: '/videos/{slug}/thumbnail', method: 'get', public: true },
+    ];
+
+    for (const route of expected) {
+      const operation = paths[route.path]?.[route.method];
+      expect(operation).toBeDefined();
+      expect(operation.tags).toEqual(['videos']);
+      expect(Boolean(operation.security)).toBe(!route.public);
+    }
+  });
 });

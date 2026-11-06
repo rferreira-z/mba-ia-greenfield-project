@@ -118,3 +118,60 @@ Content-Type: {{contentType}}
   "token": "{{resetToken}}",
   "new_password": "new-password123"
 }
+
+
+###
+# ─────────────────────────────────────────────
+# VÍDEOS (Fase 03) — upload direto ao storage, processamento e streaming
+# ─────────────────────────────────────────────
+# Fluxo: 10 → PUT de cada parte na URL pré-assinada (direto no MinIO, fora da API)
+#        → 12 → acompanhar 13 até status "ready" → 14/15/16.
+# Requer o login (@name login) feito acima.
+
+@videoSlug = {{createVideo.response.body.$.video.slug}}
+
+### 10. Iniciar upload (pré-cadastra o vídeo como rascunho)
+# @name createVideo
+POST {{baseUrl}}/videos
+Authorization: Bearer {{accessToken}}
+Content-Type: {{contentType}}
+
+{
+  "title": "Meu primeiro vídeo",
+  "file_name": "video.mp4",
+  "file_size": 1048576,
+  "mime_type": "video/mp4"
+}
+
+
+### 11. URLs pré-assinadas das partes (até 100 por requisição)
+# Envie cada parte com: curl -X PUT --upload-file <parte> "<url>"
+POST {{baseUrl}}/videos/{{videoSlug}}/upload/part-urls
+Authorization: Bearer {{accessToken}}
+Content-Type: {{contentType}}
+
+{
+  "part_numbers": [1]
+}
+
+
+### 12. Concluir upload (status → processing; job enfileirado para o worker)
+POST {{baseUrl}}/videos/{{videoSlug}}/upload/complete
+Authorization: Bearer {{accessToken}}
+
+
+### 13. Consultar status do vídeo (dono)
+GET {{baseUrl}}/videos/{{videoSlug}}
+Authorization: Bearer {{accessToken}}
+
+
+### 14. Streaming (público) — 302 para URL pré-assinada; o storage responde Range com 206
+GET {{baseUrl}}/videos/{{videoSlug}}/stream
+
+
+### 15. Download (público) — 302 para URL com Content-Disposition: attachment
+GET {{baseUrl}}/videos/{{videoSlug}}/download
+
+
+### 16. Thumbnail (público)
+GET {{baseUrl}}/videos/{{videoSlug}}/thumbnail
