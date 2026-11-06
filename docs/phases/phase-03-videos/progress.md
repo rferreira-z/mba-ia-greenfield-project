@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
-**Status:** in_progress
-**SIs:** 12/13 completed
+**Status:** completed
+**SIs:** 13/13 completed
 
 ### SI-03.1 — Infrastructure: object storage, queue broker and FFmpeg in the dev image
 - **Status:** completed
@@ -92,6 +92,10 @@
   - **Security fix found by the pipeline test:** FFmpeg prefixes errors with its input, so the presigned source URL (with `X-Amz-Signature`) leaked into worker logs and into `failure_reason`, which the API returns to the owner. `MediaProbeService` now redacts the input to `<source>`; covered by `media-probe.service.integration-spec.ts` and an assertion in the pipeline e2e.
 
 ### SI-03.13 — OpenAPI contract and AI documentation
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** openapi-export.integration-spec.ts 10/10 (1 new: all 7 video routes tagged `videos`, public vs bearer); final DoD: npm test 232/232 (37 suites), test:e2e 78/78 (5 suites), tsc 0, lint 0, build 0
+- **Observations:**
+  - `openapi.json` regenerated with `npm run openapi:export`: all 7 video routes and response schemas are present. **Pre-existing, out of scope:** the export runs under `ts-node`, where the `@nestjs/swagger` CLI plugin does not apply, so *request* DTO schemas are emitted without properties — already true for every Phase 02 DTO (`RegisterDto` etc.). Fixing it (export from the compiled build) should be a separate task.
+  - Testing guide (`references/external-systems.md`, `SKILL.md`, `artifacts/services.md`) updated per the TD-11 revision: real MinIO/Redis strategy, presigned-HTTP helper, isolated BullMQ prefix.
+  - Both `CLAUDE.md` files updated; every file path and npm script they cite was checked against the repository.
+  - **Out of scope, noted for a separate task:** `.env.example` ships `MAIL_FROM=\"StreamTube\" <noreply@streamtube.com>`, which Docker Compose cannot parse (`unexpected character \"<\"`) — the exact case `nestjs-project/CLAUDE.md` warns about; a fresh `cp .env.example .env` breaks `docker compose up`.

@@ -20,11 +20,17 @@ See `docs/diagrams/software-arch.mermaid` for the full diagram. Key containers:
 
 - **Frontend** (Next.js) → calls API via REST, streams from Object Storage
 - **API** (Nest.js) → business rules, auth, reads/writes DB, uploads to storage, publishes jobs to queue, sends emails
-- **Video Worker** (FFmpeg) → consumes jobs from queue, processes videos, updates DB and storage
+- **Video Worker** (NestJS application context + FFmpeg, Compose service `video-worker`) → consumes jobs from queue, extracts duration/metadata and a thumbnail, updates DB and storage
 - **Database** (PostgreSQL) → users, channels, videos, comments, likes
-- **Object Storage** (S3/MinIO) → video files and thumbnails
-- **Message Queue** (TBD) → video processing job queue
+- **Object Storage** (S3-compatible; MinIO locally — Chainguard build pinned by digest, AWS S3 in production) → video files and thumbnails in one private bucket, accessed through presigned URLs
+- **Message Queue** (BullMQ on Redis, decided in Phase 03) → video processing job queue
 - **Email Service** (SMTP) → account confirmation and password recovery
+
+## Videos (Phase 03)
+
+Large uploads never pass through the API: `POST /videos` pre-registers a `draft` and starts an S3 multipart upload, the client PUTs parts directly to object storage with presigned URLs (up to 10 GiB), and `POST /videos/:slug/upload/complete` moves the video to `processing` and enqueues a BullMQ job. The `video-worker` container probes the file with `ffprobe`, stores a JPEG thumbnail and marks the video `ready` (or `failed` with a reason). Each video has a unique 11-character `slug`; `GET /videos/:slug/stream|download|thumbnail` redirect to short-lived presigned URLs, so storage serves HTTP range requests (206) directly.
+
+Status lifecycle: `draft → processing → ready | failed`. Details (modules, endpoints, env keys, test prerequisites) live in `nestjs-project/CLAUDE.md` → "Videos (Phase 03)"; plan and decisions in `docs/phases/phase-03-videos/` and `docs/decisions/technical-decisions-phase-03-videos.md`.
 
 ## Docker Networking
 

@@ -37,89 +37,56 @@ How each external system is handled in tests. These strategies were confirmed wi
 
 ---
 
-## Object Storage — Local Filesystem
+## Object Storage — Real MinIO (Docker)
 
-**Strategy:** Local filesystem storage in development and tests. S3 in production.
+**Strategy:** Real S3-compatible storage via the Compose `minio` service (bucket created by the one-shot `minio-init`). Decided in `phase-03-videos/TD-11` — a filesystem adapter cannot exercise presigned multipart uploads or HTTP range/206 semantics, which are the contracts that matter.
 
-**Approach:**
-- The storage layer should use an abstraction (e.g., `StorageService` interface) that allows switching between local filesystem and S3
-- In tests, use the local filesystem adapter — no mocking needed
-- Use a temporary directory for test uploads: `os.tmpdir()` or a dedicated `test-uploads/` directory
-- Clean up test files in `afterAll`
+**Wiring:**
+- Import `StorageModule` with a global `ConfigModule` loading `storageConfig` (env from `.env`: `S3_ENDPOINT=http://minio:9000`, `S3_PUBLIC_ENDPOINT`, credentials, bucket).
+- For services that also need Postgres + Redis, use `createVideoTestingModule([...])` from `src/test/video-test-module.ts`.
 
-**Setup pattern:**
+**Presigned URLs inside the container:** client-facing URLs are signed for `S3_PUBLIC_ENDPOINT` (e.g. `localhost:9000`), which is not reachable from `nestjs-api`. SigV4 signs the `Host` header, so never rewrite the URL — use `requestPresigned(url, { method, body, headers })` from `src/test/presigned-http.ts`, which connects to `S3_ENDPOINT` while sending the original `Host`.
+
 ```typescript
-// In test module setup
-{
-  provide: 'STORAGE_CONFIG',
-  useValue: {
-    driver: 'local',
-    basePath: path.join(os.tmpdir(), 'streamtube-test-uploads'),
-  },
-}
-```
+const url = await storage.presignUploadPart(key, uploadId, 1);
+const res = await requestPresigned(url, { method: 'PUT', body: chunk });
+expect(res.status).toBe(200);
 
-**Integration test:**
-```typescript
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
-
-describe('StorageService (integration)', () => {
-  const testDir = path.join(os.tmpdir(), 'streamtube-test-uploads');
-
-  afterAll(() => {
-    fs.rmSync(testDir, { recursive: true, force: true });
-  });
-
-  it('should upload and retrieve a file', async () => {
-    const buffer = Buffer.from('test content');
-    const key = await storageService.upload(buffer, 'test.txt');
-
-    const retrieved = await storageService.get(key);
-    expect(retrieved.toString()).toBe('test content');
-  });
+const get = await requestPresigned(await storage.presignGetObject(key), {
+  headers: { range: 'bytes=0-99' },
 });
+expect(get.status).toBe(206);
 ```
+
+**Test isolation:**
+- Use unique keys (`test/<suite>/<uuid>`) and delete them in `afterAll` (internal client via the `S3_INTERNAL_CLIENT` token), or abort multipart uploads left by drafts.
+- Real media fixtures are generated at test time with `generateSampleVideo()` (`src/test/video-fixtures.ts`, FFmpeg `lavfi` sources) — never commit binary fixtures.
 
 ---
 
-## Message Queue — Real (Docker)
+## Message Queue — Real BullMQ/Redis (Docker)
 
-**Strategy:** Real message broker in Docker. The specific technology is TBD per the architecture diagram (likely BullMQ with Redis or RabbitMQ).
+**Strategy:** Real Redis via the Compose `redis` service with BullMQ (`phase-03-videos/TD-01`).
 
-**When the queue technology is chosen, configure:**
-- A queue broker service in `compose.yaml` (e.g., Redis for BullMQ, RabbitMQ for AMQP)
-- Test isolation: use dedicated test queues or clean queues between tests
-- For publisher tests: assert the job is enqueued with correct data
-- For consumer tests: submit a job and assert the processing outcome
+**Producer tests (integration):** register `BullModule.forRoot` with a **random `prefix`** so the running `video-worker` container never consumes the jobs; assert through the queue token and obliterate it afterwards.
 
-**Setup pattern (BullMQ example):**
 ```typescript
-// In test module
 BullModule.forRoot({
-  connection: {
-    host: process.env.REDIS_HOST ?? 'localhost',
-    port: Number(process.env.REDIS_PORT ?? 6379),
-  },
+  connection: { host: process.env.REDIS_HOST ?? 'redis', port: Number(process.env.REDIS_PORT ?? 6379) },
+  prefix: `test-${randomUUID()}`,
 }),
-BullModule.registerQueue({ name: 'video-processing' }),
+// ...
+const queue = module.get<Queue>(getQueueToken(VIDEO_PROCESSING_QUEUE));
+expect((await queue.getJob(videoId))?.data).toEqual({ videoId });
+await queue.obliterate({ force: true }); // afterAll
 ```
 
-```typescript
-describe('VideoService (integration - queue)', () => {
-  it('should enqueue a processing job on upload', async () => {
-    await videoService.upload(videoData);
+**Consumer tests:**
+- Unit — call `VideoProcessor.process(job)` directly with a stub job (`attemptsMade`, `opts.attempts`) to cover retry/unrecoverable mapping.
+- Integration — test `VideoProcessingService` against Postgres + MinIO + FFmpeg **without** registering the processor (no BullMQ worker inside Jest).
+- E2E — `test/video-pipeline.e2e-spec.ts` relies on the Compose `video-worker` container consuming the default-prefix queue; it must be running (`docker compose up -d`).
 
-    const queue = module.get<Queue>(getQueueToken('video-processing'));
-    const jobs = await queue.getJobs(['waiting']);
-    expect(jobs).toHaveLength(1);
-    expect(jobs[0].data).toEqual(
-      expect.objectContaining({ videoId: expect.any(String) }),
-    );
-  });
-});
-```
+**Gotcha:** compiling a module that contains a `@Processor` does not start the worker (workers start on `init`), but set an isolated `QUEUE_PREFIX` anyway (see `src/worker.module.spec.ts`).
 
 ---
 
