@@ -199,6 +199,8 @@ describe('Video pipeline: upload → queue → worker → streaming (e2e)', () =
       expect(video.status).toBe('failed');
       expect(video.failure_reason).toEqual(expect.any(String));
       expect(video.failure_reason!.length).toBeGreaterThan(0);
+      // The presigned source URL is a credential; it must be redacted.
+      expect(video.failure_reason).not.toContain('X-Amz-Signature');
       await api().get(`/videos/${slug}/stream`).expect(409);
     },
     PROCESSING_TIMEOUT_MS + 30_000,

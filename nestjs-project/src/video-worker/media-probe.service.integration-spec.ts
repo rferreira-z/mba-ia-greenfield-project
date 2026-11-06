@@ -95,6 +95,24 @@ describe('MediaProbeService (integration — real FFmpeg)', () => {
       await module.close();
     });
 
+    it('should never leak the presigned URL into error messages', async () => {
+      const garbageKey = `test/media-probe/${randomUUID()}.mp4`;
+      await storage.putObject(garbageKey, randomBytes(32 * 1024), 'video/mp4');
+      const url = await storage.presignInternalGetObject(garbageKey);
+
+      const error = await service.probe(url).catch((err: unknown) => err);
+
+      expect(error).toBeInstanceOf(InvalidMediaError);
+      expect((error as Error).message).toContain('<source>');
+      expect((error as Error).message).not.toContain('X-Amz-Signature');
+      await module.get<S3Client>(S3_INTERNAL_CLIENT).send(
+        new DeleteObjectCommand({
+          Bucket: process.env.S3_BUCKET ?? 'streamtube-videos',
+          Key: garbageKey,
+        }),
+      );
+    });
+
     it('should probe and grab a frame through HTTP range reads', async () => {
       const url = await storage.presignInternalGetObject(key);
 

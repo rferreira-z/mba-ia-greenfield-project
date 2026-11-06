@@ -89,6 +89,7 @@
 - **Observations:**
   - Verified the deliverables end-to-end with the real `video-worker` container: a generated 2 s H.264/AAC MP4 is uploaded straight to MinIO through presigned part URLs, processed (duration ≈ 2 s, 320×240, h264/aac, JPEG thumbnail), streamed with HTTP 206 and downloaded byte-identical with `Content-Disposition: attachment`.
   - Added a warning log when the worker rejects invalid media, so the failed path is visible in `docker compose logs video-worker`.
+  - **Security fix found by the pipeline test:** FFmpeg prefixes errors with its input, so the presigned source URL (with `X-Amz-Signature`) leaked into worker logs and into `failure_reason`, which the API returns to the owner. `MediaProbeService` now redacts the input to `<source>`; covered by `media-probe.service.integration-spec.ts` and an assertion in the pipeline e2e.
 
 ### SI-03.13 — OpenAPI contract and AI documentation
 - **Status:** pending

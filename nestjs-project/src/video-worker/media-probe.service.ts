@@ -24,10 +24,20 @@ interface ToolResult {
   stderr: string;
 }
 
+/**
+ * FFmpeg prefixes errors with the input it was given. For presigned URLs that
+ * is a live credential (X-Amz-Signature), so it must never reach logs or
+ * `failure_reason` (exposed to the video owner).
+ */
+function redactInput(text: string, input: string): string {
+  return text.split(input).join('<source>');
+}
+
 function runTool(
   tool: 'ffprobe' | 'ffmpeg',
   args: string[],
   timeoutMs: number,
+  input: string,
 ): Promise<ToolResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(tool, args, { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -49,7 +59,7 @@ function runTool(
     });
     child.on('close', (code) => {
       clearTimeout(timer);
-      const tail = stderr.trim().slice(-STDERR_TAIL_CHARS);
+      const tail = redactInput(stderr, input).trim().slice(-STDERR_TAIL_CHARS);
       if (timedOut) {
         reject(
           new MediaToolError(tool, null, `timed out after ${timeoutMs}ms`),
@@ -87,6 +97,7 @@ export class MediaProbeService {
         input,
       ],
       PROBE_TIMEOUT_MS,
+      input,
     );
 
     let output: FfprobeOutput;
@@ -120,6 +131,7 @@ export class MediaProbeService {
         'pipe:1',
       ],
       THUMBNAIL_TIMEOUT_MS,
+      input,
     );
     if (stdout.length === 0) {
       throw new InvalidMediaError('ffmpeg could not extract a video frame');
